@@ -117,6 +117,30 @@ func (r *Releaser) Release(serviceSpec flux.ServiceSpec, imageSpec flux.ImageSpe
 	return actions, nil
 }
 
+type stageTimer struct {
+	base  metrics.Histogram
+	stage *metrics.Timer
+}
+
+func (r *Releaser) newStageTimer(method string) *stageTimer {
+	return &stageTimer{
+		base: r.metrics.StageDuration.With("method", method),
+	}
+}
+
+func (t *stageTimer) next(stageName string) {
+	if t.stage != nil {
+		t.stage.ObserveDuration()
+	}
+	t.stage = metrics.NewTimer(t.base.With("stage", stageName))
+}
+
+func (t *stageTimer) finish() {
+	if t.stage != nil {
+		t.stage.ObserveDuration()
+	}
+}
+
 // Specific releaseX functions. The general idea:
 // - Walk the platform and collect things to do;
 // - If ReleaseKindExecute, execute those things; and then
@@ -125,29 +149,24 @@ func (r *Releaser) Release(serviceSpec flux.ServiceSpec, imageSpec flux.ImageSpe
 func (r *Releaser) releaseAllToLatest() (res []flux.ReleaseAction, err error) {
 	res = append(res, r.releaseActionPrintf("I'm going to release all services to their latest images."))
 
-	var (
-		base  = r.metrics.StageDuration.With("method", "release_all_to_latest")
-		stage *metrics.Timer
-	)
+	timer := r.newStageTimer("release_all_to_latest")
+	defer timer.finish()
 
-	defer func() { stage.ObserveDuration() }()
-	stage = metrics.NewTimer(base.With("stage", "fetch_all_platform_services"))
+	timer.next("fetch_all_platform_services")
 
 	serviceIDs, err := r.helper.AllServices()
 	if err != nil {
 		return nil, errors.Wrap(err, "fetching all platform services")
 	}
 
-	stage.ObserveDuration()
-	stage = metrics.NewTimer(base.With("stage", "all_releasable_images_for"))
+	timer.next("all_releasable_images_for")
 
 	containerMap, err := r.helper.AllReleasableImagesFor(serviceIDs)
 	if err != nil {
 		return nil, errors.Wrap(err, "fetching images for services")
 	}
 
-	stage.ObserveDuration()
-	stage = metrics.NewTimer(base.With("stage", "calculate_regrades"))
+	timer.next("calculate_regrades")
 
 	// Each service is running multiple images.
 	// Each image may need to be upgraded, and trigger a release.
@@ -181,8 +200,7 @@ func (r *Releaser) releaseAllToLatest() (res []flux.ReleaseAction, err error) {
 		return res, nil
 	}
 
-	stage.ObserveDuration()
-	stage = metrics.NewTimer(base.With("stage", "finalize"))
+	timer.next("finalize")
 
 	// We have identified at least 1 release that needs to occur. Releasing
 	// means cloning the repo, changing the resource file(s), committing and
@@ -202,21 +220,17 @@ func (r *Releaser) releaseAllToLatest() (res []flux.ReleaseAction, err error) {
 func (r *Releaser) releaseAllForImage(target flux.ImageID) (res []flux.ReleaseAction, err error) {
 	res = append(res, r.releaseActionPrintf("I'm going to release image %s to all services that would use it.", target))
 
-	var (
-		base  = r.metrics.StageDuration.With("method", "release_all_for_image")
-		stage *metrics.Timer
-	)
+	timer := r.newStageTimer("release_all_for_image")
+	defer timer.finish()
 
-	defer func() { stage.ObserveDuration() }()
-	stage = metrics.NewTimer(base.With("stage", "fetch_all_platform_services"))
+	timer.next("fetch_all_platform_services")
 
 	serviceIDs, err := r.helper.AllServices()
 	if err != nil {
 		return nil, errors.Wrap(err, "fetching all platform services")
 	}
 
-	stage.ObserveDuration()
-	stage = metrics.NewTimer(base.With("stage", "all_releasable_images_for"))
+	timer.next("all_releasable_images_for")
 
 	containerMap, err := r.helper.AllReleasableImagesFor(serviceIDs)
 	if err != nil {
@@ -226,8 +240,7 @@ func (r *Releaser) releaseAllForImage(target flux.ImageID) (res []flux.ReleaseAc
 	// Each service is running multiple images.
 	// Each image may need to be modified, and trigger a release.
 
-	stage.ObserveDuration()
-	stage = metrics.NewTimer(base.With("stage", "calculate_regrades"))
+	timer.next("calculate_regrades")
 
 	regradeMap := map[flux.ServiceID][]containerRegrade{}
 	for serviceID, containers := range containerMap {
@@ -252,8 +265,7 @@ func (r *Releaser) releaseAllForImage(target flux.ImageID) (res []flux.ReleaseAc
 		return res, nil
 	}
 
-	stage.ObserveDuration()
-	stage = metrics.NewTimer(base.With("stage", "finalize"))
+	timer.next("finalize")
 
 	// We have identified at least 1 release that needs to occur. Releasing
 	// means cloning the repo, changing the resource file(s), committing and
@@ -274,13 +286,9 @@ func (r *Releaser) releaseAllForImage(target flux.ImageID) (res []flux.ReleaseAc
 func (r *Releaser) releaseOneToLatest(id flux.ServiceID) (res []flux.ReleaseAction, err error) {
 	res = append(res, r.releaseActionPrintf("I'm going to release the latest images(s) for service %s.", id))
 
-	var (
-		base  = r.metrics.StageDuration.With("method", "release_one_to_latest")
-		stage *metrics.Timer
-	)
-
-	defer func() { stage.ObserveDuration() }()
-	stage = metrics.NewTimer(base.With("stage", "fetch_images_for_service"))
+	timer := r.newStageTimer("release_one_to_latest")
+	defer timer.finish()
+	timer.next("fetch_images_for_service")
 
 	namespace, service := id.Components()
 	containers, err := r.helper.PlatformContainersFor(namespace, service)
@@ -288,8 +296,7 @@ func (r *Releaser) releaseOneToLatest(id flux.ServiceID) (res []flux.ReleaseActi
 		return nil, errors.Wrapf(err, "fetching images for service %s", id)
 	}
 
-	stage.ObserveDuration()
-	stage = metrics.NewTimer(base.With("stage", "calculate_regrades"))
+	timer.next("calculate_regrades")
 
 	// Each service is running multiple images.
 	// Each image may need to be modified, and trigger a release.
@@ -326,8 +333,7 @@ func (r *Releaser) releaseOneToLatest(id flux.ServiceID) (res []flux.ReleaseActi
 		return res, nil
 	}
 
-	stage.ObserveDuration()
-	stage = metrics.NewTimer(base.With("stage", "finalize"))
+	timer.next("finalize")
 
 	// We need to make 1 release. Releasing means cloning the repo, changing the
 	// resource file(s), committing and pushing, and then making the release(s)
@@ -344,13 +350,9 @@ func (r *Releaser) releaseOneToLatest(id flux.ServiceID) (res []flux.ReleaseActi
 func (r *Releaser) releaseOne(serviceID flux.ServiceID, target flux.ImageID) (res []flux.ReleaseAction, err error) {
 	res = append(res, r.releaseActionPrintf("I'm going to release image %s to service %s.", target, serviceID))
 
-	var (
-		base  = r.metrics.StageDuration.With("method", "release_one")
-		stage *metrics.Timer
-	)
-
-	defer func() { stage.ObserveDuration() }()
-	stage = metrics.NewTimer(base.With("stage", "fetch_images_for_service"))
+	timer := r.newStageTimer("release_one")
+	defer timer.finish()
+	timer.next("fetch_images_for_service")
 
 	namespace, service := serviceID.Components()
 	containers, err := r.helper.PlatformContainersFor(namespace, service)
@@ -358,8 +360,7 @@ func (r *Releaser) releaseOne(serviceID flux.ServiceID, target flux.ImageID) (re
 		return nil, errors.Wrapf(err, "fetching images for service %s", serviceID)
 	}
 
-	stage.ObserveDuration()
-	stage = metrics.NewTimer(base.With("stage", "calculate_regrades"))
+	timer.next("calculate_regrades")
 
 	// Each service is running multiple images.
 	// Each image may need to be modified, and trigger a release.
@@ -386,8 +387,7 @@ func (r *Releaser) releaseOne(serviceID flux.ServiceID, target flux.ImageID) (re
 		return res, nil
 	}
 
-	stage.ObserveDuration()
-	stage = metrics.NewTimer(base.With("stage", "finalize"))
+	timer.next("finalize")
 
 	// We have identified at least 1 regrade that needs to occur. Releasing
 	// means cloning the repo, changing the resource file(s), committing and
@@ -403,13 +403,9 @@ func (r *Releaser) releaseOne(serviceID flux.ServiceID, target flux.ImageID) (re
 
 // Release whatever is in the cloned configuration, without changing anything
 func (r *Releaser) releaseOneWithoutUpdate(serviceID flux.ServiceID) (res []flux.ReleaseAction, err error) {
-	var (
-		base  = r.metrics.StageDuration.With("method", "release_one_without_update")
-		stage *metrics.Timer
-	)
-
-	defer func() { stage.ObserveDuration() }()
-	stage = metrics.NewTimer(base.With("stage", "finalize"))
+	timer := r.newStageTimer("release_one_without_update")
+	defer timer.finish()
+	timer.next("finalize")
 
 	actions := []flux.ReleaseAction{
 		r.releaseActionPrintf("I'm going to release service %s using the config from the git repo, without updating it", serviceID),
@@ -422,21 +418,16 @@ func (r *Releaser) releaseOneWithoutUpdate(serviceID flux.ServiceID) (res []flux
 
 // Release whatever is in the cloned configuration, without changing anything
 func (r *Releaser) releaseAllWithoutUpdate() (res []flux.ReleaseAction, err error) {
-	var (
-		base  = r.metrics.StageDuration.With("method", "release_all_without_update")
-		stage *metrics.Timer
-	)
-
-	defer func() { stage.ObserveDuration() }()
-	stage = metrics.NewTimer(base.With("stage", "fetch_all_platform_services"))
+	timer := r.newStageTimer("release_all_without_update")
+	defer timer.finish()
+	timer.next("fetch_all_platform_services")
 
 	serviceIDs, err := r.helper.AllServices()
 	if err != nil {
 		return nil, errors.Wrap(err, "fetching all platform services")
 	}
 
-	stage.ObserveDuration()
-	stage = metrics.NewTimer(base.With("stage", "finalize"))
+	timer.next("finalize")
 
 	actions := []flux.ReleaseAction{
 		r.releaseActionPrintf("I'm going to release all services using the config from the git repo, without updating it."),
