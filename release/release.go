@@ -8,7 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/metrics"
 	"github.com/pkg/errors"
 
@@ -16,7 +15,6 @@ import (
 	"github.com/weaveworks/fluxy/git"
 	"github.com/weaveworks/fluxy/history"
 	"github.com/weaveworks/fluxy/platform/kubernetes"
-	"github.com/weaveworks/fluxy/registry"
 )
 
 type Releaser struct {
@@ -36,16 +34,13 @@ type Metrics struct {
 }
 
 func New(
-	platform *kubernetes.Cluster,
-	registry *registry.Client,
-	logger log.Logger,
+	helper *flux.Helper,
 	repo git.Repo,
 	history history.EventWriter,
 	metrics Metrics,
-	helperDuration metrics.Histogram,
 ) *Releaser {
 	return &Releaser{
-		helper:    flux.NewHelper(platform, registry, logger, helperDuration),
+		helper:    helper,
 		repo:      repo,
 		history:   history,
 		metrics:   metrics,

@@ -234,6 +234,11 @@ func main() {
 		}
 	}
 
+	var help *flux.Helper
+	{
+		help = flux.NewHelper(k8s, reg, logger, helperDuration)
+	}
+
 	// Repo and releaser.
 	var rel flux.Releaser
 	{
@@ -242,7 +247,7 @@ func main() {
 			Key:  *repoKey,
 			Path: *repoPath,
 		}
-		rel = release.New(k8s, reg, logger, repo, eventWriter, releaseMetrics, helperDuration)
+		rel = release.New(help, repo, eventWriter, releaseMetrics)
 	}
 
 	// Automator component.
@@ -262,7 +267,7 @@ func main() {
 	}
 
 	// The server.
-	server := flux.NewServer(k8s, reg, rel, auto, eventReader, logger, serverMetrics, helperDuration)
+	server := flux.NewServer(help, rel, auto, eventReader, serverMetrics)
 
 	// Mechanical components.
 	errc := make(chan error)

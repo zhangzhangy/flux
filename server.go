@@ -5,13 +5,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/metrics"
 	"github.com/pkg/errors"
 
 	"github.com/weaveworks/fluxy/history"
-	"github.com/weaveworks/fluxy/platform/kubernetes"
-	"github.com/weaveworks/fluxy/registry"
 )
 
 type server struct {
@@ -40,17 +37,14 @@ type Metrics struct {
 }
 
 func NewServer(
-	platform *kubernetes.Cluster,
-	registry *registry.Client,
+	helper *Helper,
 	releaser Releaser,
 	automator Automator,
 	history history.EventReader,
-	logger log.Logger,
 	metrics Metrics,
-	helperDuration metrics.Histogram,
 ) Service {
 	return &server{
-		helper:      NewHelper(platform, registry, logger, helperDuration),
+		helper:      helper,
 		releaser:    releaser,
 		automator:   automator,
 		history:     history,
