@@ -66,19 +66,21 @@ func (r *Releaser) Release(serviceSpec flux.ServiceSpec, imageSpec flux.ImageSpe
 	}
 	defer func() { <-r.semaphore }()
 
+	var actions []flux.ReleaseAction
+
 	switch {
 	case serviceSpec == flux.ServiceSpecAll && imageSpec == flux.ImageSpecLatest:
 		releaseType = "release_all_to_latest"
-		return r.releaseAllToLatest(kind)
+		actions, err = r.releaseAllToLatest()
 
 	case serviceSpec == flux.ServiceSpecAll && imageSpec == flux.ImageSpecNone:
 		releaseType = "release_all_without_update"
-		return r.releaseAllWithoutUpdate(kind)
+		actions, err = r.releaseAllWithoutUpdate()
 
 	case serviceSpec == flux.ServiceSpecAll:
 		releaseType = "release_all_for_image"
 		imageID := flux.ParseImageID(string(imageSpec))
-		return r.releaseAllForImage(imageID, kind)
+		actions, err = r.releaseAllForImage(imageID)
 
 	case imageSpec == flux.ImageSpecLatest:
 		releaseType = "release_one_to_latest"
@@ -86,7 +88,7 @@ func (r *Releaser) Release(serviceSpec flux.ServiceSpec, imageSpec flux.ImageSpe
 		if err != nil {
 			return nil, errors.Wrapf(err, "parsing service ID from spec %s", serviceSpec)
 		}
-		return r.releaseOneToLatest(serviceID, kind)
+		actions, err = r.releaseOneToLatest(serviceID)
 
 	case imageSpec == flux.ImageSpecNone:
 		releaseType = "release_one_without_update"
@@ -94,7 +96,7 @@ func (r *Releaser) Release(serviceSpec flux.ServiceSpec, imageSpec flux.ImageSpe
 		if err != nil {
 			return nil, errors.Wrapf(err, "parsing service ID from spec %s", serviceSpec)
 		}
-		return r.releaseOneWithoutUpdate(serviceID, kind)
+		actions, err = r.releaseOneWithoutUpdate(serviceID)
 
 	default:
 		releaseType = "release_one"
@@ -103,8 +105,16 @@ func (r *Releaser) Release(serviceSpec flux.ServiceSpec, imageSpec flux.ImageSpe
 			return nil, errors.Wrapf(err, "parsing service ID from spec %s", serviceSpec)
 		}
 		imageID := flux.ParseImageID(string(imageSpec))
-		return r.releaseOne(serviceID, imageID, kind)
+		actions, err = r.releaseOne(serviceID, imageID)
 	}
+
+	if kind == flux.ReleaseKindExecute {
+		if err = r.execute(actions); err != nil {
+			return actions, err
+		}
+	}
+
+	return actions, nil
 }
 
 // Specific releaseX functions. The general idea:
@@ -112,7 +122,7 @@ func (r *Releaser) Release(serviceSpec flux.ServiceSpec, imageSpec flux.ImageSpe
 // - If ReleaseKindExecute, execute those things; and then
 // - Return the things we did (or didn't) do.
 
-func (r *Releaser) releaseAllToLatest(kind flux.ReleaseKind) (res []flux.ReleaseAction, err error) {
+func (r *Releaser) releaseAllToLatest() (res []flux.ReleaseAction, err error) {
 	res = append(res, r.releaseActionPrintf("I'm going to release all services to their latest images."))
 
 	var (
@@ -186,17 +196,10 @@ func (r *Releaser) releaseAllToLatest(kind flux.ReleaseKind) (res []flux.Release
 	for service := range regradeMap {
 		res = append(res, r.releaseActionReleaseService(service, "latest images (to all services)"))
 	}
-
-	if kind == flux.ReleaseKindExecute {
-		if err := r.execute(res); err != nil {
-			return res, err
-		}
-	}
-
 	return res, nil
 }
 
-func (r *Releaser) releaseAllForImage(target flux.ImageID, kind flux.ReleaseKind) (res []flux.ReleaseAction, err error) {
+func (r *Releaser) releaseAllForImage(target flux.ImageID) (res []flux.ReleaseAction, err error) {
 	res = append(res, r.releaseActionPrintf("I'm going to release image %s to all services that would use it.", target))
 
 	var (
@@ -265,16 +268,10 @@ func (r *Releaser) releaseAllForImage(target flux.ImageID, kind flux.ReleaseKind
 		res = append(res, r.releaseActionReleaseService(service, string(target)+" (to all services)"))
 	}
 
-	if kind == flux.ReleaseKindExecute {
-		if err := r.execute(res); err != nil {
-			return res, err
-		}
-	}
-
 	return res, nil
 }
 
-func (r *Releaser) releaseOneToLatest(id flux.ServiceID, kind flux.ReleaseKind) (res []flux.ReleaseAction, err error) {
+func (r *Releaser) releaseOneToLatest(id flux.ServiceID) (res []flux.ReleaseAction, err error) {
 	res = append(res, r.releaseActionPrintf("I'm going to release the latest images(s) for service %s.", id))
 
 	var (
@@ -341,16 +338,10 @@ func (r *Releaser) releaseOneToLatest(id flux.ServiceID, kind flux.ReleaseKind) 
 	res = append(res, r.releaseActionCommitAndPush(fmt.Sprintf("Release latest images to %s", id)))
 	res = append(res, r.releaseActionReleaseService(id, "latest images"))
 
-	if kind == flux.ReleaseKindExecute {
-		if err := r.execute(res); err != nil {
-			return res, err
-		}
-	}
-
 	return res, nil
 }
 
-func (r *Releaser) releaseOne(serviceID flux.ServiceID, target flux.ImageID, kind flux.ReleaseKind) (res []flux.ReleaseAction, err error) {
+func (r *Releaser) releaseOne(serviceID flux.ServiceID, target flux.ImageID) (res []flux.ReleaseAction, err error) {
 	res = append(res, r.releaseActionPrintf("I'm going to release image %s to service %s.", target, serviceID))
 
 	var (
@@ -407,17 +398,11 @@ func (r *Releaser) releaseOne(serviceID flux.ServiceID, target flux.ImageID, kin
 	res = append(res, r.releaseActionCommitAndPush(fmt.Sprintf("Release %s to %s", target, serviceID)))
 	res = append(res, r.releaseActionReleaseService(serviceID, string(target)))
 
-	if kind == flux.ReleaseKindExecute {
-		if err := r.execute(res); err != nil {
-			return res, err
-		}
-	}
-
 	return res, nil
 }
 
 // Release whatever is in the cloned configuration, without changing anything
-func (r *Releaser) releaseOneWithoutUpdate(serviceID flux.ServiceID, kind flux.ReleaseKind) (res []flux.ReleaseAction, err error) {
+func (r *Releaser) releaseOneWithoutUpdate(serviceID flux.ServiceID) (res []flux.ReleaseAction, err error) {
 	var (
 		base  = r.metrics.StageDuration.With("method", "release_one_without_update")
 		stage *metrics.Timer
@@ -432,14 +417,11 @@ func (r *Releaser) releaseOneWithoutUpdate(serviceID flux.ServiceID, kind flux.R
 		r.releaseActionFindPodController(serviceID),
 		r.releaseActionReleaseService(serviceID, "without update"),
 	}
-	if kind == flux.ReleaseKindExecute {
-		return actions, r.execute(actions)
-	}
 	return actions, nil
 }
 
 // Release whatever is in the cloned configuration, without changing anything
-func (r *Releaser) releaseAllWithoutUpdate(kind flux.ReleaseKind) (res []flux.ReleaseAction, err error) {
+func (r *Releaser) releaseAllWithoutUpdate() (res []flux.ReleaseAction, err error) {
 	var (
 		base  = r.metrics.StageDuration.With("method", "release_all_without_update")
 		stage *metrics.Timer
@@ -468,9 +450,6 @@ func (r *Releaser) releaseAllWithoutUpdate(kind flux.ReleaseKind) (res []flux.Re
 		)
 	}
 
-	if kind == flux.ReleaseKindExecute {
-		return actions, r.execute(actions)
-	}
 	return actions, nil
 }
 
