@@ -67,20 +67,25 @@ func (r *Releaser) Release(serviceSpec flux.ServiceSpec, imageSpec flux.ImageSpe
 	defer func() { <-r.semaphore }()
 
 	var actions []flux.ReleaseAction
+	var timer *stageTimer
+	initTimer := func(method string) *stageTimer {
+		timer = newStageTimer(r.metrics.StageDuration, method)
+		return timer
+	}
 
 	switch {
 	case serviceSpec == flux.ServiceSpecAll && imageSpec == flux.ImageSpecLatest:
 		releaseType = "release_all_to_latest"
-		actions, err = r.releaseAllToLatest()
+		actions, err = r.releaseAllToLatest(initTimer(releaseType))
 
 	case serviceSpec == flux.ServiceSpecAll && imageSpec == flux.ImageSpecNone:
 		releaseType = "release_all_without_update"
-		actions, err = r.releaseAllWithoutUpdate()
+		actions, err = r.releaseAllWithoutUpdate(initTimer(releaseType))
 
 	case serviceSpec == flux.ServiceSpecAll:
 		releaseType = "release_all_for_image"
 		imageID := flux.ParseImageID(string(imageSpec))
-		actions, err = r.releaseAllForImage(imageID)
+		actions, err = r.releaseAllForImage(initTimer(releaseType), imageID)
 
 	case imageSpec == flux.ImageSpecLatest:
 		releaseType = "release_one_to_latest"
@@ -88,7 +93,7 @@ func (r *Releaser) Release(serviceSpec flux.ServiceSpec, imageSpec flux.ImageSpe
 		if err != nil {
 			return nil, errors.Wrapf(err, "parsing service ID from spec %s", serviceSpec)
 		}
-		actions, err = r.releaseOneToLatest(serviceID)
+		actions, err = r.releaseOneToLatest(initTimer(releaseType), serviceID)
 
 	case imageSpec == flux.ImageSpecNone:
 		releaseType = "release_one_without_update"
@@ -96,7 +101,7 @@ func (r *Releaser) Release(serviceSpec flux.ServiceSpec, imageSpec flux.ImageSpe
 		if err != nil {
 			return nil, errors.Wrapf(err, "parsing service ID from spec %s", serviceSpec)
 		}
-		actions, err = r.releaseOneWithoutUpdate(serviceID)
+		actions, err = r.releaseOneWithoutUpdate(initTimer(releaseType), serviceID)
 
 	default:
 		releaseType = "release_one"
@@ -105,8 +110,9 @@ func (r *Releaser) Release(serviceSpec flux.ServiceSpec, imageSpec flux.ImageSpe
 			return nil, errors.Wrapf(err, "parsing service ID from spec %s", serviceSpec)
 		}
 		imageID := flux.ParseImageID(string(imageSpec))
-		actions, err = r.releaseOne(serviceID, imageID)
+		actions, err = r.releaseOne(initTimer(releaseType), serviceID, imageID)
 	}
+	timer.finish()
 
 	if kind == flux.ReleaseKindExecute {
 		if err = r.execute(actions); err != nil {
@@ -122,9 +128,9 @@ type stageTimer struct {
 	stage *metrics.Timer
 }
 
-func (r *Releaser) newStageTimer(method string) *stageTimer {
+func newStageTimer(duration metrics.Histogram, method string) *stageTimer {
 	return &stageTimer{
-		base: r.metrics.StageDuration.With("method", method),
+		base: duration.With("method", method),
 	}
 }
 
@@ -146,11 +152,8 @@ func (t *stageTimer) finish() {
 // - If ReleaseKindExecute, execute those things; and then
 // - Return the things we did (or didn't) do.
 
-func (r *Releaser) releaseAllToLatest() (res []flux.ReleaseAction, err error) {
+func (r *Releaser) releaseAllToLatest(timer *stageTimer) (res []flux.ReleaseAction, err error) {
 	res = append(res, r.releaseActionPrintf("I'm going to release all services to their latest images."))
-
-	timer := r.newStageTimer("release_all_to_latest")
-	defer timer.finish()
 
 	timer.next("fetch_all_platform_services")
 
@@ -217,11 +220,8 @@ func (r *Releaser) releaseAllToLatest() (res []flux.ReleaseAction, err error) {
 	return res, nil
 }
 
-func (r *Releaser) releaseAllForImage(target flux.ImageID) (res []flux.ReleaseAction, err error) {
+func (r *Releaser) releaseAllForImage(timer *stageTimer, target flux.ImageID) (res []flux.ReleaseAction, err error) {
 	res = append(res, r.releaseActionPrintf("I'm going to release image %s to all services that would use it.", target))
-
-	timer := r.newStageTimer("release_all_for_image")
-	defer timer.finish()
 
 	timer.next("fetch_all_platform_services")
 
@@ -283,11 +283,9 @@ func (r *Releaser) releaseAllForImage(target flux.ImageID) (res []flux.ReleaseAc
 	return res, nil
 }
 
-func (r *Releaser) releaseOneToLatest(id flux.ServiceID) (res []flux.ReleaseAction, err error) {
+func (r *Releaser) releaseOneToLatest(timer *stageTimer, id flux.ServiceID) (res []flux.ReleaseAction, err error) {
 	res = append(res, r.releaseActionPrintf("I'm going to release the latest images(s) for service %s.", id))
 
-	timer := r.newStageTimer("release_one_to_latest")
-	defer timer.finish()
 	timer.next("fetch_images_for_service")
 
 	namespace, service := id.Components()
@@ -347,11 +345,9 @@ func (r *Releaser) releaseOneToLatest(id flux.ServiceID) (res []flux.ReleaseActi
 	return res, nil
 }
 
-func (r *Releaser) releaseOne(serviceID flux.ServiceID, target flux.ImageID) (res []flux.ReleaseAction, err error) {
+func (r *Releaser) releaseOne(timer *stageTimer, serviceID flux.ServiceID, target flux.ImageID) (res []flux.ReleaseAction, err error) {
 	res = append(res, r.releaseActionPrintf("I'm going to release image %s to service %s.", target, serviceID))
 
-	timer := r.newStageTimer("release_one")
-	defer timer.finish()
 	timer.next("fetch_images_for_service")
 
 	namespace, service := serviceID.Components()
@@ -402,9 +398,7 @@ func (r *Releaser) releaseOne(serviceID flux.ServiceID, target flux.ImageID) (re
 }
 
 // Release whatever is in the cloned configuration, without changing anything
-func (r *Releaser) releaseOneWithoutUpdate(serviceID flux.ServiceID) (res []flux.ReleaseAction, err error) {
-	timer := r.newStageTimer("release_one_without_update")
-	defer timer.finish()
+func (r *Releaser) releaseOneWithoutUpdate(timer *stageTimer, serviceID flux.ServiceID) (res []flux.ReleaseAction, err error) {
 	timer.next("finalize")
 
 	actions := []flux.ReleaseAction{
@@ -417,9 +411,7 @@ func (r *Releaser) releaseOneWithoutUpdate(serviceID flux.ServiceID) (res []flux
 }
 
 // Release whatever is in the cloned configuration, without changing anything
-func (r *Releaser) releaseAllWithoutUpdate() (res []flux.ReleaseAction, err error) {
-	timer := r.newStageTimer("release_all_without_update")
-	defer timer.finish()
+func (r *Releaser) releaseAllWithoutUpdate(timer *stageTimer) (res []flux.ReleaseAction, err error) {
 	timer.next("fetch_all_platform_services")
 
 	serviceIDs, err := r.helper.AllServices()
