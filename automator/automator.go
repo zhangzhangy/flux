@@ -1,17 +1,23 @@
 package automator
 
-import "sync"
+import (
+	"sync"
+
+	"github.com/weaveworks/fluxy"
+)
 
 const (
 	automationEnabled  = "Automation enabled."
 	automationDisabled = "Automation disabled."
+
+	HardwiredInstance = "DEFAULT"
 )
 
 // Automator orchestrates continuous deployment for specific services.
 type Automator struct {
 	cfg    Config
 	mtx    sync.RWMutex
-	active map[namespacedService]*svc
+	active map[flux.ServiceID]*svc
 }
 
 // New creates a new automator.
@@ -19,16 +25,50 @@ func New(cfg Config) (*Automator, error) {
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
-	return &Automator{
+	instanceConfig, err := cfg.Get(HardwiredInstance)
+	if err != nil {
+		return err
+	}
+
+	auto := &Automator{
 		cfg:    cfg,
-		active: map[namespacedService]*svc{},
-	}, nil
+		active: map[flux.ServiceID]*svc{},
+	}
+
+	for service, conf := range instanceConfig.Services {
+		if service.Automation {
+			ns, name := service.Components()
+			if err = auto.automate(ns, name); err != nil {
+				return err
+			}
+		}
+	}
+	return auto, nil
 }
 
 // Automate turns on automated (continuous) deployment for the named service.
 // This call always succeeds; if the named service cannot be automated for some
 // reason, that will be detected and happen autonomously.
 func (a *Automator) Automate(namespace, serviceName string) error {
+	service := flux.MakeServiceID(namespace, serviceName)
+	instanceConfig, err := a.cfg.Config.Get(HardwiredInstance)
+	if err != nil {
+		return err
+	}
+	if _, found := instanceConfig.Services[service]; found {
+		instanceConfig.Services[service].Automated = true
+	} else {
+		instanceConfig.Services[service] = config.ServiceConfig{
+			Automation: true,
+		}
+	}
+	if err = a.cfg.Config.Set(HardwiredInstance, instanceConfig); err != nil {
+		return err
+	}
+	return a.automate(namespace, serviceName)
+}
+
+func (a *Automator) automate(namespace, serviceName string) error {
 	a.mtx.Lock()
 	defer a.mtx.Unlock()
 

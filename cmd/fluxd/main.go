@@ -234,6 +234,17 @@ func main() {
 		}
 	}
 
+	// Configuration, i.e., whether services are automated or not.
+	var config config.DB
+	{
+		db, err := configSQL.New(*databaseDriver, *databaseSource)
+		if err != nil {
+			logger.Log("component", "config", "err", err)
+			os.Exit(1)
+		}
+		config = db
+	}
+
 	// Repo and releaser.
 	var rel flux.Releaser
 	{
@@ -252,6 +263,7 @@ func main() {
 		auto, err = automator.New(automator.Config{
 			Releaser: rel,
 			History:  eventWriter,
+			Config:   config,
 		})
 		if err == nil {
 			logger.Log("automator", "enabled", "repo", *repoURL)

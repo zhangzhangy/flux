@@ -12,6 +12,7 @@ import (
 type Config struct {
 	Releaser flux.Releaser
 	History  history.EventWriter
+	Config   config.DB
 }
 
 // Validate returns an error if the config is underspecified.
@@ -22,6 +23,9 @@ func (cfg Config) Validate() error {
 	}
 	if cfg.History == nil {
 		errs = append(errs, "history DB not supplied")
+	}
+	if cfg.Config == nil {
+		errs = append(errs, "instance configuration DB not supplied")
 	}
 	if len(errs) > 0 {
 		return errors.New("invalid: " + strings.Join(errs, "; "))
