@@ -15,9 +15,7 @@ const (
 
 // Automator orchestrates continuous deployment for specific services.
 type Automator struct {
-	cfg    Config
-	mtx    sync.RWMutex
-	active map[flux.ServiceID]*svc
+	cfg Config
 }
 
 // New creates a new automator.
@@ -25,38 +23,19 @@ func New(cfg Config) (*Automator, error) {
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
-	instanceConfig, err := cfg.Get(HardwiredInstance)
-	if err != nil {
-		return err
-	}
-
 	auto := &Automator{
-		cfg:    cfg,
-		active: map[flux.ServiceID]*svc{},
-	}
-
-	for service, conf := range instanceConfig.Services {
-		if service.Automation {
-			ns, name := service.Components()
-			if err = auto.automate(ns, name); err != nil {
-				return err
-			}
-		}
+		cfg: cfg,
 	}
 	return auto, nil
 }
 
-// Automate turns on automated (continuous) deployment for the named service.
-// This call always succeeds; if the named service cannot be automated for some
-// reason, that will be detected and happen autonomously.
-func (a *Automator) Automate(namespace, serviceName string) error {
-	service := flux.MakeServiceID(namespace, serviceName)
+func (a *Automater) setAutomation(service ServiceID, automation bool) error {
 	instanceConfig, err := a.cfg.Config.Get(HardwiredInstance)
 	if err != nil {
 		return err
 	}
 	if _, found := instanceConfig.Services[service]; found {
-		instanceConfig.Services[service].Automated = true
+		instanceConfig.Services[service].Automated = automation
 	} else {
 		instanceConfig.Services[service] = config.ServiceConfig{
 			Automation: true,
@@ -65,7 +44,22 @@ func (a *Automator) Automate(namespace, serviceName string) error {
 	if err = a.cfg.Config.Set(HardwiredInstance, instanceConfig); err != nil {
 		return err
 	}
-	return a.automate(namespace, serviceName)
+}
+
+// Automate turns on automated (continuous) deployment for the named service.
+// This call always succeeds; if the named service cannot be automated for some
+// reason, that will be detected and happen autonomously.
+func (a *Automator) Automate(namespace, serviceName string) error {
+	a.cfg.History.LogEvent(namespace, serviceName, automationEnabled)
+	return a.setAutomation(flux.MakeServiceID(namespace, serviceName), true)
+}
+
+// Deautomate turns off automated (continuous) deployment for the named service.
+// This is more of a signal; it may take some time for the service to be
+// properly deautomated.
+func (a *Automator) Deautomate(namespace, serviceName string) error {
+	a.cfg.History.LogEvent(namespace, serviceName, automationDisabled)
+	return a.setAutomation(flux.MakeServiceID(namespace, serviceName), false)
 }
 
 func (a *Automator) automate(namespace, serviceName string) error {
@@ -103,7 +97,6 @@ func (a *Automator) Deautomate(namespace, serviceName string) error {
 	// to make sure svc termination follows a single code path.
 	s.signalDelete()
 
-	a.cfg.History.LogEvent(namespace, serviceName, automationDisabled)
 	return nil
 }
 
