@@ -30,6 +30,8 @@ var (
 	ErrInvalidReleaseKind = errors.New("invalid release kind")
 )
 
+type InstanceID string
+
 type ReleaseKind string
 
 const (
