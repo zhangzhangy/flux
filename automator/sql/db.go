@@ -2,6 +2,7 @@ package sql
 
 import (
 	"database/sql"
+	"fmt"
 	"time"
 
 	"github.com/weaveworks/fluxy"
@@ -49,9 +50,9 @@ func (db *DB) CandidatesForUpdate() ([]flux.InstanceID, error) {
 	}
 	candidates := []flux.InstanceID{}
 	for rows.Next() {
-		var id flux.InstanceID
+		var id string
 		rows.Scan(&id)
-		candidates = append(candidates, id)
+		candidates = append(candidates, flux.InstanceID(id))
 	}
 	return candidates, rows.Err()
 }
@@ -62,7 +63,8 @@ func (db *DB) ScheduleCheck(id flux.InstanceID, after time.Duration) error {
 		_, err = tx.Exec(`DELETE FROM automation_schedule WHERE instance = $1`, string(id))
 		if err == nil {
 			_, err = tx.Exec(`INSERT INTO automation_schedule
-                              (instance, next_check) VALUES ($1, now() + duration($2))`, string(id), (after/time.Second).String()+"s")
+                                   (instance, next_check) VALUES ($1, now() + duration($2))`,
+				string(id), fmt.Sprintf("%ds", after/time.Second))
 			if err == nil {
 				err = tx.Commit()
 			}
