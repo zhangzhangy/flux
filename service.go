@@ -104,6 +104,10 @@ func ParseImageID(s string) ImageID {
 	return ImageID(s) // technically all strings are valid
 }
 
+func MakeImageID(reg, name, tag string) ImageID {
+	return fmt.Sprintf("%s/%s:%s", reg, name, tag)
+}
+
 func (id ImageID) Components() (registry, name, tag string) {
 	s := string(id)
 	toks := strings.SplitN(s, "/", 3)

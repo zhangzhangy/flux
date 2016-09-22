@@ -34,84 +34,54 @@ func NewHelper(
 	}
 }
 
-func (h *Helper) AllServices() (res []ServiceID, err error) {
+// ImagesFor gets the image metadata for the images used in the
+// servics given.
+func (h *Helper) ImagesFor(services []Service) (res map[ServiceID][]Container, err error) {
 	defer func(begin time.Time) {
 		h.duration.With(
-			"method", "AllServices",
+			"method", "ImagesFor",
 			"success", fmt.Sprint(err == nil),
 		).Observe(time.Since(begin).Seconds())
 	}(time.Now())
 
-	namespaces, err := h.platform.Namespaces()
-	if err != nil {
-		return nil, errors.Wrap(err, "fetching platform namespaces")
+	images := map[string][]ImageDescription{}
+	for _, service := range services {
+		for _, container := range service.Containers {
+			image := container.Current
+			images[image.Repository] = make([]ImageDescription)
+		}
 	}
 
-	for _, namespace := range namespaces {
-		ids, err := h.NamespaceServices(namespace)
+	var errs []error
+	for repository, _ := range images {
+		registryRepo, err := h.RegistryGetRepository(repository)
 		if err != nil {
-			return nil, err
+			append(errs, err)
 		}
-		res = append(res, ids...)
+		images[repository] = makeImageDescriptions(registryRepo)
 	}
 
-	return res, nil
-}
-
-func (h *Helper) NamespaceServices(namespace string) (res []ServiceID, err error) {
-	defer func(begin time.Time) {
-		h.duration.With(
-			"method", "NamespaceServices",
-			"success", fmt.Sprint(err == nil),
-		).Observe(time.Since(begin).Seconds())
-	}(time.Now())
-
-	services, err := h.platform.Services(namespace)
-	if err != nil {
-		return nil, errors.Wrapf(err, "fetching platform services for namespace %q", namespace)
-	}
-
-	res = make([]ServiceID, len(services))
-	for i, service := range services {
-		res[i] = MakeServiceID(namespace, service.Name)
-	}
-
-	return res, nil
-}
-
-// AllReleasableImagesFor returns a map of service IDs to the
-// containers with images that may be regraded. It leaves out any
-// services that cannot have containers associated with them, e.g.,
-// because there is no matching deployment.
-func (h *Helper) AllReleasableImagesFor(serviceIDs []ServiceID) (res map[ServiceID][]platform.Container, err error) {
-	defer func(begin time.Time) {
-		h.duration.With(
-			"method", "AllReleasableImagesFor",
-			"success", fmt.Sprint(err == nil),
-		).Observe(time.Since(begin).Seconds())
-	}(time.Now())
-
-	res = map[ServiceID][]platform.Container{}
-	for _, serviceID := range serviceIDs {
-		namespace, service := serviceID.Components()
-		containers, err := h.platform.ContainersFor(namespace, service)
-		if err != nil {
-			switch err {
-			case platform.ErrEmptySelector, platform.ErrServiceHasNoSelector, platform.ErrNoMatching, platform.ErrMultipleMatching, platform.ErrNoMatchingImages:
-				continue
-			default:
-				return nil, errors.Wrapf(err, "fetching containers for %s", serviceID)
-			}
-		}
-		if len(containers) <= 0 {
-			continue
-		}
-		res[serviceID] = containers
+	res = map[ServiceID][]Container{}
+	for _, service := range services {
+		res[service.ID] = makeContainersWithImages(service, images)
 	}
 	return res, nil
 }
 
-func (h *Helper) PlatformService(namespace, service string) (res platform.Service, err error) {
+func makeImageDescriptions(repo registry.Repository) []ImageDescription {
+	res := []ImageDescription{}
+	for _, image := range repo.Images {
+		res = append(res, ImageDescription{
+			ID:        MakeImageID(image.Registry, image.Name, image.Tag),
+			CreatedAt: image.CreatedAt,
+		})
+	}
+}
+
+// PlatformServices asks the platform for a list of the services,
+// either those running in the namespace given, or if it is empty,
+// those running in all namespaces.
+func (h *Helper) PlatformServices(namespace string) (res []platform.Service, err error) {
 	defer func(begin time.Time) {
 		h.duration.With(
 			"method", "PlatformService",
@@ -119,7 +89,12 @@ func (h *Helper) PlatformService(namespace, service string) (res platform.Servic
 		).Observe(time.Since(begin).Seconds())
 	}(time.Now())
 
-	return h.platform.Service(namespace, service)
+	return h.platform.Services(namespace)
+}
+
+func (h *Helper) PlatformService(serviceID flux.ServiceID) (platform.Service, error) {
+	ns, s := serviceID.Components()
+	return h.Service(ns, s)
 }
 
 func (h *Helper) PlatformNamespaces() (res []string, err error) {
@@ -131,17 +106,6 @@ func (h *Helper) PlatformNamespaces() (res []string, err error) {
 	}(time.Now())
 
 	return h.platform.Namespaces()
-}
-
-func (h *Helper) PlatformContainersFor(namespace, service string) (res []platform.Container, err error) {
-	defer func(begin time.Time) {
-		h.duration.With(
-			"method", "PlatformContainersFor",
-			"success", fmt.Sprint(err == nil),
-		).Observe(time.Since(begin).Seconds())
-	}(time.Now())
-
-	return h.platform.ContainersFor(namespace, service)
 }
 
 func (h *Helper) RegistryGetRepository(repository string) (res *registry.Repository, err error) {

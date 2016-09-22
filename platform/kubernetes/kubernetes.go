@@ -114,17 +114,17 @@ func (c *Cluster) Service(namespace, service string) (platform.Service, error) {
 		}
 		return platform.Service{}, errors.Wrap(err, "fetching service "+namespace+"/"+service)
 	}
-	return c.makePlatformService(apiService), nil
+	ps, err := c.podControllers(namespace)
+	if err != nil {
+		return errors.Wrap(err, "fetching replication controllers / deployments")
+	}
+	s := c.makePlatformService(apiService, ps)
+	return s, nil
 }
 
-// Services returns the set of services currently active on the platform in the
-// given namespace. Maybe it makes sense to move the namespace to the
-// constructor? Depends on how it will be used. For now it is here.
-//
-// The user is expected to list services, and then choose the one that will
-// receive a release. Releases operate on replication controllers, not services.
-// For now, we make a simplifying assumption that there is a one-to-one mapping
-// between services and replication controllers.
+// Services returns the set of services currently active on the
+// platform in the given namespace. If the namespace is empty, return
+// services in all namespaces.
 func (c *Cluster) Services(namespace string) ([]platform.Service, error) {
 	apiServices, err := c.services(namespace)
 	if err != nil {
@@ -256,7 +256,28 @@ func (p podController) templateContainers() []api.Container {
 	return nil
 }
 
-func (c *Cluster) podControllerFor(namespace, serviceName string) (res podController, err error) {
+func (c *Cluster) podControllers(namespace string) ([]podController, error) {
+	res := []podController{}
+
+	rclist, err := c.client.ReplicationControllers(namespace).List(api.ListOptions{})
+	if err != nil {
+		return res, errors.Wrap(err, "fetching replication controllers for ns "+namespace)
+	}
+	for _, rc := range rclist.Items {
+		res = append(res, podController{ReplicationController: rc})
+	}
+
+	deplist, err := c.client.Deployments(namespace).List(api.ListOptions{})
+	if err != nil {
+		return res, errors.Wrap(err, "fetching deployments for ns "+namespace)
+	}
+	for _, d := range deplist.Items {
+		res = append(res, podController{Deployment: d})
+	}
+	return res, nil
+}
+
+func (c *Cluster) xxx_podControllerFor(namespace, serviceName string) (res podController, err error) {
 	res = podController{}
 
 	service, err := c.service(namespace, serviceName)
@@ -350,43 +371,27 @@ func (c *Cluster) podControllerFor(namespace, serviceName string) (res podContro
 	return res, nil
 }
 
-// ContainersFor returns a list of container names with the image
-// specified to run in that container, for a particular service. This
-// is useful to see which images a particular service is presently
-// running, to judge whether a release is needed.
-func (c *Cluster) ContainersFor(namespace, serviceName string) (res []platform.Container, err error) {
-	pc, err := c.podControllerFor(namespace, serviceName)
-	if err != nil {
-		return nil, err
-	}
-
-	var containers []platform.Container
-	for _, container := range pc.templateContainers() {
-		containers = append(containers, platform.Container{
-			Image: container.Image,
-			Name:  container.Name,
-		})
-	}
-	if len(containers) <= 0 {
-		return nil, platform.ErrNoMatchingImages
-	}
-	return containers, nil
-}
-
-func (c *Cluster) makePlatformServices(apiServices []api.Service) []platform.Service {
+func (c *Cluster) makePlatformServices(apiServices []api.Service, podControllers []podController) []platform.Service {
 	platformServices := make([]platform.Service, len(apiServices))
 	for i, s := range apiServices {
-		platformServices[i] = c.makePlatformService(s)
+		platformServices[i] = c.makePlatformService(s, podControllers)
 	}
 	return platformServices
 }
 
-func (c *Cluster) makePlatformService(s api.Service) platform.Service {
+func (c *Cluster) makePlatformService(s api.Service, podControllers []podController) platform.Service {
 	metadata := map[string]string{
 		"created_at":       s.CreationTimestamp.String(),
 		"resource_version": s.ResourceVersion,
 		"uid":              string(s.UID),
 		"type":             string(s.Spec.Type),
+	}
+
+	var containers []api.Container
+	for _, pc := range podControllers {
+		if ps.matchFor(s) {
+
+		}
 	}
 
 	var status string

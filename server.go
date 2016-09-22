@@ -55,12 +55,6 @@ func NewServer(
 	}
 }
 
-// The server methods are deliberately awkward, cobbled together from existing
-// platform and registry APIs. I want to avoid changing those components until I
-// get something working. There's also a lot of code duplication here for the
-// same reason: let's not add abstraction until it's merged, or nearly so, and
-// it's clear where the abstraction should exist.
-
 func (s *server) ListServices(namespace string) (res []ServiceStatus, err error) {
 	defer func(begin time.Time) {
 		s.metrics.ListServicesDuration.With(
@@ -69,55 +63,33 @@ func (s *server) ListServices(namespace string) (res []ServiceStatus, err error)
 		).Observe(time.Since(begin).Seconds())
 	}(time.Now())
 
-	var serviceIDs []ServiceID
-	if namespace == "" {
-		serviceIDs, err = s.helper.AllServices()
-	} else {
-		serviceIDs, err = s.helper.NamespaceServices(namespace)
-	}
+	services, err = s.helper.PlatformServices(namespace)
+
 	if err != nil {
 		return nil, errors.Wrapf(err, "fetching services for namespace %s on the platform", namespace)
 	}
 
-	var (
-		statusc = make(chan ServiceStatus)
-		errc    = make(chan error)
-	)
-	for _, serviceID := range serviceIDs {
-		go func(serviceID ServiceID) {
-			s.maxPlatform <- struct{}{}
-			defer func() { <-s.maxPlatform }()
-
-			c, err := s.containersFor(serviceID, false)
-			if err != nil {
-				errc <- errors.Wrapf(err, "fetching containers for %s", serviceID)
-				return
-			}
-
-			namespace, service := serviceID.Components()
-			platformSvc, err := s.helper.PlatformService(namespace, service)
-			if err != nil {
-				errc <- errors.Wrapf(err, "getting platform service %s", serviceID)
-				return
-			}
-
-			statusc <- ServiceStatus{
-				ID:         serviceID,
-				Containers: c,
-				Status:     platformSvc.Status,
-				Automated:  s.automator.IsAutomated(namespace, service),
-			}
-		}(serviceID)
-	}
-	for i := 0; i < len(serviceIDs); i++ {
-		select {
-		case err := <-errc:
-			s.helper.Log("err", err)
-		case status := <-statusc:
-			res = append(res, status)
+	for _, service := range services {
+		ns, s := service.ID.Components()
+		status := ServiceStatus{
+			ID:         service.ID,
+			Containers: makeServiceContainers(service.Containers),
+			Status:     service.Status,
+			Automated:  s.automator.IsAutomated(ns, s),
 		}
+		res = append(res, status)
 	}
 	return res, nil
+}
+
+func makeServiceContainers(cs []platform.Container) (res []Container) {
+	res = make([]Container, len(cs))
+	for i, c := range cs {
+		res[i] = Container{
+			Name:    c.Name,
+			Current: ImageDescription{ID: ParseImageID(c.Image)},
+		}
+	}
 }
 
 func (s *server) ListImages(spec ServiceSpec) (res []ImageStatus, err error) {
@@ -128,47 +100,28 @@ func (s *server) ListImages(spec ServiceSpec) (res []ImageStatus, err error) {
 		).Observe(time.Since(begin).Seconds())
 	}(time.Now())
 
-	serviceIDs, err := func() ([]ServiceID, error) {
+	services, err := func() ([]ServiceID, error) {
 		if spec == ServiceSpecAll {
-			return s.helper.AllServices()
+			return s.helper.PlatformServices()
 		}
-		id, err := ParseServiceID(string(spec))
-		return []ServiceID{id}, err
+		s, err := s.helper.PlatformOneService(ParseServiceID(string(spec)))
+		return []platform.Service{s}, err
 	}()
 	if err != nil {
-		return nil, errors.Wrapf(err, "fetching service ID(s)")
+		return nil, errors.Wrapf(err, "fetching services from platform")
 	}
 
-	var (
-		statusc = make(chan ImageStatus)
-		errc    = make(chan error)
-	)
-	for _, serviceID := range serviceIDs {
-		go func(serviceID ServiceID) {
-			s.maxPlatform <- struct{}{}
-			defer func() { <-s.maxPlatform }()
-
-			c, err := s.containersFor(serviceID, true)
-			if err != nil {
-				errc <- errors.Wrapf(err, "fetching containers for %s", serviceID)
-				return
-			}
-
-			statusc <- ImageStatus{
-				ID:         serviceID,
-				Containers: c,
-			}
-		}(serviceID)
-	}
-	for i := 0; i < len(serviceIDs); i++ {
-		select {
-		case err := <-errc:
-			s.helper.Log("err", err)
-		case status := <-statusc:
-			res = append(res, status)
-		}
+	serviceContainers, err := s.helper.ContainersFor(services)
+	if err != nil {
+		return nil, errors.Wrap(err, "fetching image metadata for service containers")
 	}
 
+	for i, service := range services {
+		res = append(res, ImageStatus{
+			ID:         service.ID,
+			Containers: serviceContainers[i],
+		})
+	}
 	return res, nil
 }
 
@@ -238,52 +191,6 @@ func (s *server) PostRelease(spec ReleaseJobSpec) (ReleaseID, error) {
 
 func (s *server) GetRelease(id ReleaseID) (ReleaseJob, error) {
 	return s.releaser.GetJob(id)
-}
-
-func (s *server) containersFor(id ServiceID, includeAvailable bool) (res []Container, _ error) {
-	namespace, service := id.Components()
-	containers, err := s.helper.PlatformContainersFor(namespace, service)
-	if err != nil {
-		return nil, errors.Wrapf(err, "fetching containers for %s", id)
-	}
-
-	var errs compositeError
-	for _, container := range containers {
-		imageID := ParseImageID(container.Image)
-
-		// We may not be able to get image info from the repository,
-		// but it's still worthwhile returning what we know.
-		current := ImageDescription{ID: imageID}
-		var available []ImageDescription
-
-		if includeAvailable {
-			imageRepo, err := s.helper.RegistryGetRepository(imageID.Repository())
-			if err != nil {
-				errs = append(errs, errors.Wrapf(err, "fetching image repo for %s", imageID))
-			} else {
-				for _, image := range imageRepo.Images {
-					description := ImageDescription{
-						ID:        ParseImageID(image.String()),
-						CreatedAt: image.CreatedAt,
-					}
-					available = append(available, description)
-					if image.String() == container.Image {
-						current = description
-					}
-				}
-			}
-		}
-		res = append(res, Container{
-			Name:      container.Name,
-			Current:   current,
-			Available: available,
-		})
-	}
-
-	if len(errs) > 0 {
-		return res, errors.Wrap(errs, "one or more errors fetching image repos")
-	}
-	return res, nil
 }
 
 type compositeError []error
