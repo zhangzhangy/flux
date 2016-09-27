@@ -11,14 +11,19 @@ import (
 )
 
 type Service interface {
-	ListServices(namespace string) ([]ServiceStatus, error)
-	ListImages(ServiceSpec) ([]ImageStatus, error)
-	PostRelease(ReleaseJobSpec) (ReleaseID, error)
-	GetRelease(ReleaseID) (ReleaseJob, error)
-	Automate(ServiceID) error
-	Deautomate(ServiceID) error
-	History(ServiceSpec) ([]HistoryEntry, error)
+	ListServices(t Token, namespace string) ([]ServiceStatus, error)
+	ListImages(Token, ServiceSpec) ([]ImageStatus, error)
+	PostRelease(Token, ReleaseJobSpec) (ReleaseID, error)
+	GetRelease(Token, ReleaseID) (ReleaseJob, error)
+	Automate(Token, ServiceID) error
+	Deautomate(Token, ServiceID) error
+	History(Token, ServiceSpec) ([]HistoryEntry, error)
 }
+
+type Token string // X-Scope-OrgID
+
+// The HTTP Header key used to propagate the service token.
+const TokenHeaderKey = "X-Scope-OrgID"
 
 const (
 	ServiceSpecAll  = ServiceSpec("<all>")

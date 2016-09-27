@@ -22,30 +22,30 @@ func NewClient(c *http.Client, router *mux.Router, endpoint string) flux.Service
 	}
 }
 
-func (c *client) ListServices(namespace string) ([]flux.ServiceStatus, error) {
-	return invokeListServices(c.client, c.router, c.endpoint, namespace)
+func (c *client) ListServices(t flux.Token, namespace string) ([]flux.ServiceStatus, error) {
+	return invokeListServices(c.client, c.router, c.endpoint, t, namespace)
 }
 
-func (c *client) ListImages(s flux.ServiceSpec) ([]flux.ImageStatus, error) {
-	return invokeListImages(c.client, c.router, c.endpoint, s)
+func (c *client) ListImages(t flux.Token, s flux.ServiceSpec) ([]flux.ImageStatus, error) {
+	return invokeListImages(c.client, c.router, c.endpoint, t, s)
 }
 
-func (c *client) PostRelease(s flux.ReleaseJobSpec) (flux.ReleaseID, error) {
-	return invokePostRelease(c.client, c.router, c.endpoint, s)
+func (c *client) PostRelease(t flux.Token, s flux.ReleaseJobSpec) (flux.ReleaseID, error) {
+	return invokePostRelease(c.client, c.router, c.endpoint, t, s)
 }
 
-func (c *client) GetRelease(id flux.ReleaseID) (flux.ReleaseJob, error) {
-	return invokeGetRelease(c.client, c.router, c.endpoint, id)
+func (c *client) GetRelease(t flux.Token, id flux.ReleaseID) (flux.ReleaseJob, error) {
+	return invokeGetRelease(c.client, c.router, c.endpoint, t, id)
 }
 
-func (c *client) Automate(id flux.ServiceID) error {
-	return invokeAutomate(c.client, c.router, c.endpoint, id)
+func (c *client) Automate(t flux.Token, id flux.ServiceID) error {
+	return invokeAutomate(c.client, c.router, c.endpoint, t, id)
 }
 
-func (c *client) Deautomate(id flux.ServiceID) error {
-	return invokeDeautomate(c.client, c.router, c.endpoint, id)
+func (c *client) Deautomate(t flux.Token, id flux.ServiceID) error {
+	return invokeDeautomate(c.client, c.router, c.endpoint, t, id)
 }
 
-func (c *client) History(s flux.ServiceSpec) ([]flux.HistoryEntry, error) {
-	return invokeHistory(c.client, c.router, c.endpoint, s)
+func (c *client) History(t flux.Token, s flux.ServiceSpec) ([]flux.HistoryEntry, error) {
+	return invokeHistory(c.client, c.router, c.endpoint, t, s)
 }
