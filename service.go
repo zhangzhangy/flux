@@ -11,19 +11,14 @@ import (
 )
 
 type Service interface {
-	ListServices(t Token, namespace string) ([]ServiceStatus, error)
-	ListImages(Token, ServiceSpec) ([]ImageStatus, error)
-	PostRelease(Token, ReleaseJobSpec) (ReleaseID, error)
-	GetRelease(Token, ReleaseID) (ReleaseJob, error)
-	Automate(Token, ServiceID) error
-	Deautomate(Token, ServiceID) error
-	History(Token, ServiceSpec) ([]HistoryEntry, error)
+	ListServices(inst InstanceID, namespace string) ([]ServiceStatus, error)
+	ListImages(InstanceID, ServiceSpec) ([]ImageStatus, error)
+	PostRelease(InstanceID, ReleaseJobSpec) (ReleaseID, error)
+	GetRelease(InstanceID, ReleaseID) (ReleaseJob, error)
+	Automate(InstanceID, ServiceID) error
+	Deautomate(InstanceID, ServiceID) error
+	History(InstanceID, ServiceSpec) ([]HistoryEntry, error)
 }
-
-type Token string // X-Scope-OrgID
-
-// The HTTP Header key used to propagate the service token.
-const TokenHeaderKey = "X-Scope-OrgID"
 
 const (
 	ServiceSpecAll  = ServiceSpec("<all>")
@@ -37,7 +32,13 @@ var (
 	ErrInvalidReleaseKind = errors.New("invalid release kind")
 )
 
+type Token string
+
 type InstanceID string
+
+const InstanceIDHeaderKey = "X-Scope-OrgID"
+
+const DefaultInstanceID = "<default-instance-id>"
 
 type ReleaseKind string
 

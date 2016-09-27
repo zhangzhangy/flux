@@ -10,42 +10,44 @@ import (
 
 type client struct {
 	client   *http.Client
+	token    flux.Token
 	router   *mux.Router
 	endpoint string
 }
 
-func NewClient(c *http.Client, router *mux.Router, endpoint string) flux.Service {
+func NewClient(c *http.Client, router *mux.Router, endpoint string, t flux.Token) flux.Service {
 	return &client{
 		client:   c,
+		token:    t,
 		router:   router,
 		endpoint: endpoint,
 	}
 }
 
-func (c *client) ListServices(t flux.Token, namespace string) ([]flux.ServiceStatus, error) {
-	return invokeListServices(c.client, c.router, c.endpoint, t, namespace)
+func (c *client) ListServices(_ flux.InstanceID, namespace string) ([]flux.ServiceStatus, error) {
+	return invokeListServices(c.client, c.token, c.router, c.endpoint, namespace)
 }
 
-func (c *client) ListImages(t flux.Token, s flux.ServiceSpec) ([]flux.ImageStatus, error) {
-	return invokeListImages(c.client, c.router, c.endpoint, t, s)
+func (c *client) ListImages(_ flux.InstanceID, s flux.ServiceSpec) ([]flux.ImageStatus, error) {
+	return invokeListImages(c.client, c.token, c.router, c.endpoint, s)
 }
 
-func (c *client) PostRelease(t flux.Token, s flux.ReleaseJobSpec) (flux.ReleaseID, error) {
-	return invokePostRelease(c.client, c.router, c.endpoint, t, s)
+func (c *client) PostRelease(_ flux.InstanceID, s flux.ReleaseJobSpec) (flux.ReleaseID, error) {
+	return invokePostRelease(c.client, c.token, c.router, c.endpoint, s)
 }
 
-func (c *client) GetRelease(t flux.Token, id flux.ReleaseID) (flux.ReleaseJob, error) {
-	return invokeGetRelease(c.client, c.router, c.endpoint, t, id)
+func (c *client) GetRelease(_ flux.InstanceID, id flux.ReleaseID) (flux.ReleaseJob, error) {
+	return invokeGetRelease(c.client, c.token, c.router, c.endpoint, id)
 }
 
-func (c *client) Automate(t flux.Token, id flux.ServiceID) error {
-	return invokeAutomate(c.client, c.router, c.endpoint, t, id)
+func (c *client) Automate(_ flux.InstanceID, id flux.ServiceID) error {
+	return invokeAutomate(c.client, c.token, c.router, c.endpoint, id)
 }
 
-func (c *client) Deautomate(t flux.Token, id flux.ServiceID) error {
-	return invokeDeautomate(c.client, c.router, c.endpoint, t, id)
+func (c *client) Deautomate(_ flux.InstanceID, id flux.ServiceID) error {
+	return invokeDeautomate(c.client, c.token, c.router, c.endpoint, id)
 }
 
-func (c *client) History(t flux.Token, s flux.ServiceSpec) ([]flux.HistoryEntry, error) {
-	return invokeHistory(c.client, c.router, c.endpoint, t, s)
+func (c *client) History(_ flux.InstanceID, s flux.ServiceSpec) ([]flux.HistoryEntry, error) {
+	return invokeHistory(c.client, c.token, c.router, c.endpoint, s)
 }

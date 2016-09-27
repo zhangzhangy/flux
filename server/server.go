@@ -63,7 +63,7 @@ func New(
 // same reason: let's not add abstraction until it's merged, or nearly so, and
 // it's clear where the abstraction should exist.
 
-func (s *server) ListServices(t flux.Token, namespace string) (res []flux.ServiceStatus, err error) {
+func (s *server) ListServices(inst flux.InstanceID, namespace string) (res []flux.ServiceStatus, err error) {
 	defer func(begin time.Time) {
 		s.metrics.ListServicesDuration.With(
 			"namespace", namespace,
@@ -122,7 +122,7 @@ func (s *server) ListServices(t flux.Token, namespace string) (res []flux.Servic
 	return res, nil
 }
 
-func (s *server) ListImages(t flux.Token, spec flux.ServiceSpec) (res []flux.ImageStatus, err error) {
+func (s *server) ListImages(inst flux.InstanceID, spec flux.ServiceSpec) (res []flux.ImageStatus, err error) {
 	defer func(begin time.Time) {
 		s.metrics.ListImagesDuration.With(
 			"service_spec", fmt.Sprint(spec),
@@ -174,7 +174,7 @@ func (s *server) ListImages(t flux.Token, spec flux.ServiceSpec) (res []flux.Ima
 	return res, nil
 }
 
-func (s *server) History(t flux.Token, spec flux.ServiceSpec) (res []flux.HistoryEntry, err error) {
+func (s *server) History(inst flux.InstanceID, spec flux.ServiceSpec) (res []flux.HistoryEntry, err error) {
 	defer func(begin time.Time) {
 		s.metrics.HistoryDuration.With(
 			"service_spec", fmt.Sprint(spec),
@@ -213,21 +213,21 @@ func (s *server) History(t flux.Token, spec flux.ServiceSpec) (res []flux.Histor
 	return res, nil
 }
 
-func (s *server) Automate(t flux.Token, service flux.ServiceID) error {
+func (s *server) Automate(inst flux.InstanceID, service flux.ServiceID) error {
 	ns, svc := service.Components()
 	return s.automator.Automate(ns, svc)
 }
 
-func (s *server) Deautomate(t flux.Token, service flux.ServiceID) error {
+func (s *server) Deautomate(inst flux.InstanceID, service flux.ServiceID) error {
 	ns, svc := service.Components()
 	return s.automator.Deautomate(ns, svc)
 }
 
-func (s *server) PostRelease(t flux.Token, spec flux.ReleaseJobSpec) (flux.ReleaseID, error) {
+func (s *server) PostRelease(inst flux.InstanceID, spec flux.ReleaseJobSpec) (flux.ReleaseID, error) {
 	return s.releaser.PutJob(spec)
 }
 
-func (s *server) GetRelease(t flux.Token, id flux.ReleaseID) (flux.ReleaseJob, error) {
+func (s *server) GetRelease(inst flux.InstanceID, id flux.ReleaseID) (flux.ReleaseJob, error) {
 	return s.releaser.GetJob(id)
 }
 
