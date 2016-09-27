@@ -22,13 +22,13 @@ import (
 
 func NewRouter() *mux.Router {
 	r := mux.NewRouter()
-	r.NewRoute().Name("ListServices").Methods("GET").Path("/v2/services").Queries("namespace", "{namespace}") // optional namespace!
-	r.NewRoute().Name("ListImages").Methods("GET").Path("/v2/images").Queries("service", "{service}")
-	r.NewRoute().Name("PostRelease").Methods("POST").Path("/v2/release").Queries("service", "{service}", "image", "{image}", "kind", "{kind}")
-	r.NewRoute().Name("GetRelease").Methods("GET").Path("/v2/release").Queries("id", "{id}")
-	r.NewRoute().Name("Automate").Methods("POST").Path("/v2/automate").Queries("service", "{service}")
-	r.NewRoute().Name("Deautomate").Methods("POST").Path("/v2/deautomate").Queries("service", "{service}")
-	r.NewRoute().Name("History").Methods("GET").Path("/v2/history").Queries("service", "{service}")
+	r.NewRoute().Name("ListServices").Methods("GET").Path("/v3/services").Queries("namespace", "{namespace}") // optional namespace!
+	r.NewRoute().Name("ListImages").Methods("GET").Path("/v3/images").Queries("service", "{service}")
+	r.NewRoute().Name("PostRelease").Methods("POST").Path("/v3/release").Queries("service", "{service}", "image", "{image}", "kind", "{kind}")
+	r.NewRoute().Name("GetRelease").Methods("GET").Path("/v3/release").Queries("id", "{id}")
+	r.NewRoute().Name("Automate").Methods("POST").Path("/v3/automate").Queries("service", "{service}")
+	r.NewRoute().Name("Deautomate").Methods("POST").Path("/v3/deautomate").Queries("service", "{service}")
+	r.NewRoute().Name("History").Methods("GET").Path("/v3/history").Queries("service", "{service}")
 	return r
 }
 
