@@ -1,6 +1,4 @@
-// Package platform will hold abstractions and data types common to supported
-// platforms. We don't know what all of those will look like, yet. So the
-// package is mostly empty.
+// Package platform holds abstractions and types common to supported platforms.
 package platform
 
 import (
@@ -9,6 +7,14 @@ import (
 
 	"github.com/pkg/errors"
 )
+
+type Platform interface {
+	Namespaces() ([]string, error)
+	Services(namespace string) ([]Service, error)
+	Service(namespace, service string) (Service, error)
+	ContainersFor(namespace, service string) ([]Container, error)
+	Regrade(specs []RegradeSpec) error
+}
 
 // Service describes a platform service, generally a floating IP with one or
 // more exposed ports that map to a load-balanced pool of instances. Eventually

@@ -10,8 +10,8 @@ import (
 
 	"github.com/weaveworks/fluxy"
 	"github.com/weaveworks/fluxy/git"
+	"github.com/weaveworks/fluxy/helper"
 	"github.com/weaveworks/fluxy/history"
-	"github.com/weaveworks/fluxy/platform/kubernetes"
 	"github.com/weaveworks/fluxy/registry"
 )
 
@@ -26,7 +26,7 @@ type Worker struct {
 // Run Work in its own goroutine to start execution.
 func NewWorker(
 	jobs flux.ReleaseJobWritePopper,
-	platform *kubernetes.Cluster,
+	platformer helper.Platformer,
 	registry *registry.Client,
 	repo git.Repo,
 	history history.EventWriter,
@@ -36,7 +36,7 @@ func NewWorker(
 ) *Worker {
 	return &Worker{
 		jobs:     jobs,
-		releaser: newReleaser(platform, registry, logger, repo, history, metrics, helperDuration),
+		releaser: newReleaser(platformer, registry, logger, repo, history, metrics, helperDuration),
 		logger:   logger,
 	}
 }

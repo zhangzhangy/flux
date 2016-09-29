@@ -23,11 +23,13 @@ import (
 	"github.com/weaveworks/fluxy/automator"
 	"github.com/weaveworks/fluxy/db"
 	"github.com/weaveworks/fluxy/git"
+	"github.com/weaveworks/fluxy/helper"
 	"github.com/weaveworks/fluxy/history"
 	historysql "github.com/weaveworks/fluxy/history/sql"
 	transport "github.com/weaveworks/fluxy/http"
 	"github.com/weaveworks/fluxy/instance"
 	instancedb "github.com/weaveworks/fluxy/instance/sql"
+	"github.com/weaveworks/fluxy/platform"
 	"github.com/weaveworks/fluxy/platform/kubernetes"
 	"github.com/weaveworks/fluxy/registry"
 	"github.com/weaveworks/fluxy/release"
@@ -178,7 +180,7 @@ func main() {
 	}
 
 	// Platform component.
-	var k8s *kubernetes.Cluster
+	var platformer helper.Platformer
 	{
 		var restClientConfig *restclient.Config
 
@@ -225,8 +227,7 @@ func main() {
 		logger := log.NewContext(logger).With("component", "platform")
 		logger.Log("host", restClientConfig.Host)
 
-		var err error
-		k8s, err = kubernetes.NewCluster(restClientConfig, *kubernetesKubectl, logger)
+		k8s, err := kubernetes.NewCluster(restClientConfig, *kubernetesKubectl, logger)
 		if err != nil {
 			logger.Log("err", err)
 			os.Exit(1)
@@ -237,6 +238,8 @@ func main() {
 		} else {
 			logger.Log("services", len(services))
 		}
+
+		platformer = defaultPlatformer{k8s}
 	}
 
 	// History component.
@@ -278,7 +281,7 @@ func main() {
 			Path: *repoPath,
 		}
 
-		worker := release.NewWorker(rjs, k8s, reg, repo, eventWriter, releaseMetrics, helperDuration, logger)
+		worker := release.NewWorker(rjs, platformer, reg, repo, eventWriter, releaseMetrics, helperDuration, logger)
 		releaseTicker := time.NewTicker(time.Second)
 		defer releaseTicker.Stop()
 		go worker.Work(releaseTicker.C)
@@ -320,7 +323,7 @@ func main() {
 	go auto.Start(log.NewContext(logger).With("component", "automator"))
 
 	// The server.
-	server := server.New(k8s, reg, rjs, auto, eventReader, logger, serverMetrics, helperDuration)
+	server := server.New(platformer, reg, rjs, auto, eventReader, logger, serverMetrics, helperDuration)
 
 	// Mechanical components.
 	errc := make(chan error)
@@ -342,3 +345,9 @@ func main() {
 	// Go!
 	logger.Log("exit", <-errc)
 }
+
+// defaultPlatformer implements flux.Platformer by yielding the same wrapped
+// Kubernetes cluster for any instance ID.
+type defaultPlatformer struct{ k8s *kubernetes.Cluster }
+
+func (p defaultPlatformer) Platform(flux.InstanceID) (platform.Platform, error) { return p.k8s, nil }

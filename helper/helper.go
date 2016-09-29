@@ -10,32 +10,35 @@ import (
 
 	"github.com/weaveworks/fluxy"
 	"github.com/weaveworks/fluxy/platform"
-	"github.com/weaveworks/fluxy/platform/kubernetes"
 	"github.com/weaveworks/fluxy/registry"
 )
 
+type Platformer interface {
+	Platform(flux.InstanceID) (platform.Platform, error)
+}
+
 type Helper struct {
-	platform *kubernetes.Cluster
-	registry *registry.Client
-	logger   log.Logger
-	duration metrics.Histogram
+	platformer Platformer
+	registry   *registry.Client
+	logger     log.Logger
+	duration   metrics.Histogram
 }
 
 func New(
-	platform *kubernetes.Cluster,
+	platformer Platformer,
 	registry *registry.Client,
 	logger log.Logger,
 	duration metrics.Histogram,
 ) *Helper {
 	return &Helper{
-		platform: platform,
-		registry: registry,
-		logger:   logger,
-		duration: duration,
+		platformer: platformer,
+		registry:   registry,
+		logger:     logger,
+		duration:   duration,
 	}
 }
 
-func (h *Helper) AllServices() (res []flux.ServiceID, err error) {
+func (h *Helper) AllServices(inst flux.InstanceID) (res []flux.ServiceID, err error) {
 	defer func(begin time.Time) {
 		h.duration.With(
 			"method", "AllServices",
@@ -43,13 +46,18 @@ func (h *Helper) AllServices() (res []flux.ServiceID, err error) {
 		).Observe(time.Since(begin).Seconds())
 	}(time.Now())
 
-	namespaces, err := h.platform.Namespaces()
+	p, err := h.platformer.Platform(inst)
+	if err != nil {
+		return nil, errors.Wrapf(err, "fetching platform for %s", inst)
+	}
+
+	namespaces, err := p.Namespaces()
 	if err != nil {
 		return nil, errors.Wrap(err, "fetching platform namespaces")
 	}
 
 	for _, namespace := range namespaces {
-		ids, err := h.NamespaceServices(namespace)
+		ids, err := h.NamespaceServices(inst, namespace) // TODO(pb): flatten this to avoid another platform lookup!
 		if err != nil {
 			return nil, err
 		}
@@ -59,7 +67,7 @@ func (h *Helper) AllServices() (res []flux.ServiceID, err error) {
 	return res, nil
 }
 
-func (h *Helper) NamespaceServices(namespace string) (res []flux.ServiceID, err error) {
+func (h *Helper) NamespaceServices(inst flux.InstanceID, namespace string) (res []flux.ServiceID, err error) {
 	defer func(begin time.Time) {
 		h.duration.With(
 			"method", "NamespaceServices",
@@ -67,7 +75,12 @@ func (h *Helper) NamespaceServices(namespace string) (res []flux.ServiceID, err 
 		).Observe(time.Since(begin).Seconds())
 	}(time.Now())
 
-	services, err := h.platform.Services(namespace)
+	p, err := h.platformer.Platform(inst)
+	if err != nil {
+		return nil, errors.Wrapf(err, "fetching platform for %s", inst)
+	}
+
+	services, err := p.Services(namespace)
 	if err != nil {
 		return nil, errors.Wrapf(err, "fetching platform services for namespace %q", namespace)
 	}
@@ -84,7 +97,7 @@ func (h *Helper) NamespaceServices(namespace string) (res []flux.ServiceID, err 
 // containers with images that may be regraded. It leaves out any
 // services that cannot have containers associated with them, e.g.,
 // because there is no matching deployment.
-func (h *Helper) AllReleasableImagesFor(serviceIDs []flux.ServiceID) (res map[flux.ServiceID][]platform.Container, err error) {
+func (h *Helper) AllReleasableImagesFor(inst flux.InstanceID, serviceIDs []flux.ServiceID) (res map[flux.ServiceID][]platform.Container, err error) {
 	defer func(begin time.Time) {
 		h.duration.With(
 			"method", "AllReleasableImagesFor",
@@ -92,10 +105,15 @@ func (h *Helper) AllReleasableImagesFor(serviceIDs []flux.ServiceID) (res map[fl
 		).Observe(time.Since(begin).Seconds())
 	}(time.Now())
 
+	p, err := h.platformer.Platform(inst)
+	if err != nil {
+		return nil, errors.Wrapf(err, "fetching platform for %s", inst)
+	}
+
 	res = map[flux.ServiceID][]platform.Container{}
 	for _, serviceID := range serviceIDs {
 		namespace, service := serviceID.Components()
-		containers, err := h.platform.ContainersFor(namespace, service)
+		containers, err := p.ContainersFor(namespace, service)
 		if err != nil {
 			switch err {
 			case platform.ErrEmptySelector, platform.ErrServiceHasNoSelector, platform.ErrNoMatching, platform.ErrMultipleMatching, platform.ErrNoMatchingImages:
@@ -112,7 +130,7 @@ func (h *Helper) AllReleasableImagesFor(serviceIDs []flux.ServiceID) (res map[fl
 	return res, nil
 }
 
-func (h *Helper) PlatformService(namespace, service string) (res platform.Service, err error) {
+func (h *Helper) PlatformService(inst flux.InstanceID, namespace, service string) (res platform.Service, err error) {
 	defer func(begin time.Time) {
 		h.duration.With(
 			"method", "PlatformService",
@@ -120,10 +138,15 @@ func (h *Helper) PlatformService(namespace, service string) (res platform.Servic
 		).Observe(time.Since(begin).Seconds())
 	}(time.Now())
 
-	return h.platform.Service(namespace, service)
+	p, err := h.platformer.Platform(inst)
+	if err != nil {
+		return platform.Service{}, errors.Wrapf(err, "fetching platform for %s", inst)
+	}
+
+	return p.Service(namespace, service)
 }
 
-func (h *Helper) PlatformNamespaces() (res []string, err error) {
+func (h *Helper) PlatformNamespaces(inst flux.InstanceID) (res []string, err error) {
 	defer func(begin time.Time) {
 		h.duration.With(
 			"method", "PlatformNamespaces",
@@ -131,10 +154,15 @@ func (h *Helper) PlatformNamespaces() (res []string, err error) {
 		).Observe(time.Since(begin).Seconds())
 	}(time.Now())
 
-	return h.platform.Namespaces()
+	p, err := h.platformer.Platform(inst)
+	if err != nil {
+		return nil, errors.Wrapf(err, "fetching platform for %s", inst)
+	}
+
+	return p.Namespaces()
 }
 
-func (h *Helper) PlatformContainersFor(namespace, service string) (res []platform.Container, err error) {
+func (h *Helper) PlatformContainersFor(inst flux.InstanceID, namespace, service string) (res []platform.Container, err error) {
 	defer func(begin time.Time) {
 		h.duration.With(
 			"method", "PlatformContainersFor",
@@ -142,7 +170,12 @@ func (h *Helper) PlatformContainersFor(namespace, service string) (res []platfor
 		).Observe(time.Since(begin).Seconds())
 	}(time.Now())
 
-	return h.platform.ContainersFor(namespace, service)
+	p, err := h.platformer.Platform(inst)
+	if err != nil {
+		return nil, errors.Wrapf(err, "fetching platform for %s", inst)
+	}
+
+	return p.ContainersFor(namespace, service)
 }
 
 func (h *Helper) RegistryGetRepository(repository string) (res *registry.Repository, err error) {
@@ -156,7 +189,7 @@ func (h *Helper) RegistryGetRepository(repository string) (res *registry.Reposit
 	return h.registry.GetRepository(repository)
 }
 
-func (h *Helper) PlatformRegrade(specs []platform.RegradeSpec) (err error) {
+func (h *Helper) PlatformRegrade(inst flux.InstanceID, specs []platform.RegradeSpec) (err error) {
 	defer func(begin time.Time) {
 		h.duration.With(
 			"method", "PlatformRegrade",
@@ -164,7 +197,12 @@ func (h *Helper) PlatformRegrade(specs []platform.RegradeSpec) (err error) {
 		).Observe(time.Since(begin).Seconds())
 	}(time.Now())
 
-	return h.platform.Regrade(specs)
+	p, err := h.platformer.Platform(inst)
+	if err != nil {
+		return errors.Wrapf(err, "fetching platform for %s", inst)
+	}
+
+	return p.Regrade(specs)
 }
 
 func (h *Helper) Log(args ...interface{}) {

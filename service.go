@@ -201,7 +201,7 @@ type ReleaseJobStore interface {
 
 type ReleaseJobReadPusher interface {
 	GetJob(ReleaseID) (ReleaseJob, error)
-	PutJob(ReleaseJobSpec) (ReleaseID, error)
+	PutJob(InstanceID, ReleaseJobSpec) (ReleaseID, error)
 }
 
 type ReleaseJobWritePopper interface {
@@ -235,6 +235,7 @@ func init() {
 }
 
 type ReleaseJob struct {
+	Instance  InstanceID     `json:"-"` // pure internal
 	Spec      ReleaseJobSpec `json:"spec"`
 	ID        ReleaseID      `json:"id"`
 	Submitted time.Time      `json:"submitted"`

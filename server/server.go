@@ -12,7 +12,6 @@ import (
 	"github.com/weaveworks/fluxy"
 	"github.com/weaveworks/fluxy/helper"
 	"github.com/weaveworks/fluxy/history"
-	"github.com/weaveworks/fluxy/platform/kubernetes"
 	"github.com/weaveworks/fluxy/registry"
 )
 
@@ -38,7 +37,7 @@ type Metrics struct {
 }
 
 func New(
-	platform *kubernetes.Cluster,
+	platformer helper.Platformer,
 	registry *registry.Client,
 	releaser flux.ReleaseJobReadPusher,
 	automator Automator,
@@ -48,7 +47,7 @@ func New(
 	helperDuration metrics.Histogram,
 ) flux.Service {
 	return &server{
-		helper:      helper.New(platform, registry, logger, helperDuration),
+		helper:      helper.New(platformer, registry, logger, helperDuration),
 		releaser:    releaser,
 		automator:   automator,
 		history:     history,
@@ -73,9 +72,9 @@ func (s *server) ListServices(inst flux.InstanceID, namespace string) (res []flu
 
 	var serviceIDs []flux.ServiceID
 	if namespace == "" {
-		serviceIDs, err = s.helper.AllServices()
+		serviceIDs, err = s.helper.AllServices(inst)
 	} else {
-		serviceIDs, err = s.helper.NamespaceServices(namespace)
+		serviceIDs, err = s.helper.NamespaceServices(inst, namespace)
 	}
 	if err != nil {
 		return nil, errors.Wrapf(err, "fetching services for namespace %s on the platform", namespace)
@@ -90,14 +89,14 @@ func (s *server) ListServices(inst flux.InstanceID, namespace string) (res []flu
 			s.maxPlatform <- struct{}{}
 			defer func() { <-s.maxPlatform }()
 
-			c, err := s.containersFor(serviceID, false)
+			c, err := s.containersFor(inst, serviceID, false)
 			if err != nil {
 				errc <- errors.Wrapf(err, "fetching containers for %s", serviceID)
 				return
 			}
 
 			namespace, service := serviceID.Components()
-			platformSvc, err := s.helper.PlatformService(namespace, service)
+			platformSvc, err := s.helper.PlatformService(inst, namespace, service)
 			if err != nil {
 				errc <- errors.Wrapf(err, "getting platform service %s", serviceID)
 				return
@@ -132,7 +131,7 @@ func (s *server) ListImages(inst flux.InstanceID, spec flux.ServiceSpec) (res []
 
 	serviceIDs, err := func() ([]flux.ServiceID, error) {
 		if spec == flux.ServiceSpecAll {
-			return s.helper.AllServices()
+			return s.helper.AllServices(inst)
 		}
 		id, err := flux.ParseServiceID(string(spec))
 		return []flux.ServiceID{id}, err
@@ -150,7 +149,7 @@ func (s *server) ListImages(inst flux.InstanceID, spec flux.ServiceSpec) (res []
 			s.maxPlatform <- struct{}{}
 			defer func() { <-s.maxPlatform }()
 
-			c, err := s.containersFor(serviceID, true)
+			c, err := s.containersFor(inst, serviceID, true)
 			if err != nil {
 				errc <- errors.Wrapf(err, "fetching containers for %s", serviceID)
 				return
@@ -224,16 +223,16 @@ func (s *server) Deautomate(inst flux.InstanceID, service flux.ServiceID) error 
 }
 
 func (s *server) PostRelease(inst flux.InstanceID, spec flux.ReleaseJobSpec) (flux.ReleaseID, error) {
-	return s.releaser.PutJob(spec)
+	return s.releaser.PutJob(inst, spec)
 }
 
 func (s *server) GetRelease(inst flux.InstanceID, id flux.ReleaseID) (flux.ReleaseJob, error) {
 	return s.releaser.GetJob(id)
 }
 
-func (s *server) containersFor(id flux.ServiceID, includeAvailable bool) (res []flux.Container, _ error) {
+func (s *server) containersFor(inst flux.InstanceID, id flux.ServiceID, includeAvailable bool) (res []flux.Container, _ error) {
 	namespace, service := id.Components()
-	containers, err := s.helper.PlatformContainersFor(namespace, service)
+	containers, err := s.helper.PlatformContainersFor(inst, namespace, service)
 	if err != nil {
 		return nil, errors.Wrapf(err, "fetching containers for %s", id)
 	}
