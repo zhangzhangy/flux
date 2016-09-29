@@ -19,6 +19,7 @@ import (
 	"k8s.io/kubernetes/pkg/client/restclient"
 	k8sclient "k8s.io/kubernetes/pkg/client/unversioned"
 
+	"github.com/weaveworks/fluxy"
 	"github.com/weaveworks/fluxy/platform"
 )
 
@@ -103,61 +104,17 @@ func (c *Cluster) loop() {
 	}
 }
 
-// Namespaces returns the set of available namespaces on the platform.
-func (c *Cluster) Namespaces() ([]string, error) {
-	list, err := c.client.Namespaces().List(api.ListOptions{})
-	if err != nil {
-		return nil, errors.Wrap(err, "fetching namespaces")
-	}
-	res := make([]string, len(list.Items))
-	for i := range list.Items {
-		res[i] = list.Items[i].Name
-	}
-	return res, nil
+// --- platform API
+
+// SomeServices returns the services named, missing out any that don't
+// exist in the cluster.
+func (c *Cluster) SomeServices(ids []flux.ServiceID) ([]platform.Service, error) {
+	return nil, errors.New("Not implemented")
 }
 
-// Service returns the platform.Service representation of the named service.
-func (c *Cluster) Service(namespace, service string) (platform.Service, error) {
-	apiService, err := c.service(namespace, service)
-	if err != nil {
-		if statusErr, ok := err.(*k8serrors.StatusError); ok && statusErr.ErrStatus.Code == http.StatusNotFound { // le sigh
-			return platform.Service{}, platform.ErrNoMatchingService
-		}
-		return platform.Service{}, errors.Wrap(err, "fetching service "+namespace+"/"+service)
-	}
-	return c.makePlatformService(apiService), nil
-}
-
-// Services returns the set of services currently active on the platform in the
-// given namespace. Maybe it makes sense to move the namespace to the
-// constructor? Depends on how it will be used. For now it is here.
-//
-// The user is expected to list services, and then choose the one that will
-// receive a release. Releases operate on replication controllers, not services.
-// For now, we make a simplifying assumption that there is a one-to-one mapping
-// between services and replication controllers.
-func (c *Cluster) Services(namespace string) ([]platform.Service, error) {
-	apiServices, err := c.services(namespace)
-	if err != nil {
-		return nil, errors.Wrap(err, "fetching services for namespace "+namespace)
-	}
-	return c.makePlatformServices(apiServices), nil
-}
-
-func (c *Cluster) service(namespace, service string) (res api.Service, err error) {
-	apiService, err := c.client.Services(namespace).Get(service)
-	if err != nil {
-		return api.Service{}, err
-	}
-	return *apiService, nil
-}
-
-func (c *Cluster) services(namespace string) (res []api.Service, err error) {
-	list, err := c.client.Services(namespace).List(api.ListOptions{})
-	if err != nil {
-		return nil, err
-	}
-	return list.Items, nil
+// AllServices returns all services matching the criteria; that is, in the namespace (or any namespace if that argument is empty), and not in the `ignore` set given.
+func (c *Cluster) AllServices(namespace string, ignore flux.ServiceIDSet) ([]platform.Service, error) {
+	return nil, errors.New("Not implemented")
 }
 
 func definitionObj(bytes []byte) (*apiObject, error) {
@@ -215,6 +172,8 @@ func (c *Cluster) Regrade(specs []platform.RegradeSpec) error {
 	}
 	return <-errc
 }
+
+// --- end platform API
 
 type statusMap struct {
 	inProgress map[platform.NamespacedService]*regrade
@@ -373,56 +332,4 @@ func (c *Cluster) podControllerFor(namespace, serviceName string) (res podContro
 		return res, platform.ErrNoMatching
 	}
 	return res, nil
-}
-
-// ContainersFor returns a list of container names with the image
-// specified to run in that container, for a particular service. This
-// is useful to see which images a particular service is presently
-// running, to judge whether a release is needed.
-func (c *Cluster) ContainersFor(namespace, serviceName string) ([]platform.Container, error) {
-	pc, err := c.podControllerFor(namespace, serviceName)
-	if err != nil {
-		return nil, err
-	}
-
-	var containers []platform.Container
-	for _, container := range pc.templateContainers() {
-		containers = append(containers, platform.Container{
-			Image: container.Image,
-			Name:  container.Name,
-		})
-	}
-	if len(containers) <= 0 {
-		return nil, platform.ErrNoMatchingImages
-	}
-	return containers, nil
-}
-
-func (c *Cluster) makePlatformServices(apiServices []api.Service) []platform.Service {
-	platformServices := make([]platform.Service, len(apiServices))
-	for i, s := range apiServices {
-		platformServices[i] = c.makePlatformService(s)
-	}
-	return platformServices
-}
-
-func (c *Cluster) makePlatformService(s api.Service) platform.Service {
-	metadata := map[string]string{
-		"created_at":       s.CreationTimestamp.String(),
-		"resource_version": s.ResourceVersion,
-		"uid":              string(s.UID),
-		"type":             string(s.Spec.Type),
-	}
-
-	var status string
-	if summary, ok := c.status.getRegradeProgress(platform.NamespacedService{s.Namespace, s.Name}); ok {
-		status = summary
-	}
-
-	return platform.Service{
-		Name:     s.Name,
-		IP:       s.Spec.ClusterIP,
-		Metadata: metadata,
-		Status:   status,
-	}
 }

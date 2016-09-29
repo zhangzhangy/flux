@@ -229,7 +229,7 @@ func (r *releaser) releaseAllForImage(target flux.ImageID, kind flux.ReleaseKind
 	defer func() { stage.ObserveDuration() }()
 	stage = metrics.NewTimer(base.With("stage", "fetch_all_platform_services"))
 
-	services, err := r.helper.GetAllServicesExcept(exclude)
+	services, err := r.helper.GetAllServicesExcept("", exclude)
 	if err != nil {
 		return errors.Wrap(err, "fetching all platform services")
 	}
@@ -494,7 +494,7 @@ func (r *releaser) releaseAllWithoutUpdate(kind flux.ReleaseKind, exclude flux.S
 	defer func() { stage.ObserveDuration() }()
 	stage = metrics.NewTimer(base.With("stage", "fetch_all_platform_services"))
 
-	services, err := r.helper.GetAllServicesExcept(exclude)
+	services, err := r.helper.GetAllServicesExcept("", exclude)
 	if err != nil {
 		return errors.Wrap(err, "fetching all platform services")
 	}

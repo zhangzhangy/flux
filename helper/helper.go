@@ -36,27 +36,6 @@ func New(
 	}
 }
 
-// Sometimes we care if we can't find the containers for a service,
-// sometimes we just want the information we can get.
-type ContainersOrExcuse struct {
-	Excuse     error
-	Containers []platform.Container
-}
-
-type Service struct {
-	ID         flux.ServiceID
-	Status     string
-	Containers ContainersOrExcuse
-}
-
-func (s *Service) ContainersOrNil() []platform.Container {
-	return s.Containers.Containers
-}
-
-func (s *Service) ContainersOrError() ([]platform.Container, error) {
-	return s.Containers.Containers, s.Containers.Excuse
-}
-
 type ImageMap map[string][]flux.ImageDescription
 
 // LatestImage returns the latest releasable image for a repository.
@@ -73,31 +52,29 @@ func (m ImageMap) LatestImage(repo string) (flux.ImageDescription, error) {
 	return flux.ImageDescription{}, errors.New("no valid images available")
 }
 
-// %%TODO
 // Get the services in `namespace` along with their containers (if
 // there are any) from the platform; if namespace is blank, just get
 // all the services, in any namespace.
-func (h *Helper) GetAllServices(namespace string) ([]*Service, error) {
-	return []*Service{}, nil
+func (h *Helper) GetAllServices(maybeNamespace string) ([]platform.Service, error) {
+	return h.GetAllServicesExcept(maybeNamespace, flux.ServiceIDSet{})
 }
 
-// %% TODO
 // Get all services except those with an ID in the set given
-func (h *Helper) GetAllServicesExcept(ignored flux.ServiceIDSet) ([]*Service, error) {
-	return []*Service{}, nil
+func (h *Helper) GetAllServicesExcept(maybeNamespace string, ignored flux.ServiceIDSet) (res []platform.Service, err error) {
+	return h.platform.AllServices(maybeNamespace, ignored)
 }
 
 // %% TODO
 // Get the services mentioned, along with their containers.
-func (h *Helper) GetServices(ids []flux.ServiceID) ([]*Service, error) {
-	return []*Service{}, nil
+func (h *Helper) GetServices(ids []flux.ServiceID) ([]platform.Service, error) {
+	return h.platform.SomeServices(ids)
 }
 
 // %%% TODO
 // Get the images available for the services given. An image may be
 // mentioned more than once in the services, but will only be fetched
 // once.
-func (h *Helper) CollectAvailableImages(services []*Service) (ImageMap, error) {
+func (h *Helper) CollectAvailableImages(services []platform.Service) (ImageMap, error) {
 	return ImageMap{}, nil
 }
 

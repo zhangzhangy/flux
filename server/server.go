@@ -109,7 +109,7 @@ func (s *server) ListImages(spec flux.ServiceSpec) (res []flux.ImageStatus, err 
 		).Observe(time.Since(begin).Seconds())
 	}(time.Now())
 
-	var services []*helper.Service
+	var services []platform.Service
 	if spec == flux.ServiceSpecAll {
 		services, err = s.helper.GetAllServices("")
 	} else {
@@ -136,7 +136,7 @@ func (s *server) ListImages(spec flux.ServiceSpec) (res []flux.ImageStatus, err 
 	return res, nil
 }
 
-func containersWithAvailable(service *helper.Service, images helper.ImageMap) (res []flux.Container) {
+func containersWithAvailable(service platform.Service, images helper.ImageMap) (res []flux.Container) {
 	for _, c := range service.ContainersOrNil() {
 		id := flux.ParseImageID(c.Image)
 		repo := id.Repository()
