@@ -91,7 +91,7 @@ add it to regrades.
 	var regrades []containerRegrade
 	for _, container := range containers {
 		imageID := flux.ParseImageID(container.Image)
-                // get the available images                
+                // get the available images
 		imageRepo, err := r.helper.RegistryGetRepository(imageID.Repository())
 
 // Alternative:
@@ -114,3 +114,13 @@ ListServices gets all the services (or restricted by namespace; bleh),
 then all the containers. Just get full services+containers.
 
 ListImages needs a similar treatment to GetAllRegrades.
+
+
+%%% TODO
+
+ * Releaser doesn't need a semaphore does it? Releases are queued at the platform
+ * Consolidate value types
+ * Error if specified service, and no containers ??
+
+ * kubernetes.FilesFor(..) needs to be a platform method
+ 

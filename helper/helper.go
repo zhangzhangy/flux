@@ -73,6 +73,7 @@ func (m ImageMap) LatestImage(repo string) (flux.ImageDescription, error) {
 	return flux.ImageDescription{}, errors.New("no valid images available")
 }
 
+// %%TODO
 // Get the services in `namespace` along with their containers (if
 // there are any) from the platform; if namespace is blank, just get
 // all the services, in any namespace.
@@ -80,16 +81,19 @@ func (h *Helper) GetAllServices(namespace string) ([]*Service, error) {
 	return []*Service{}, nil
 }
 
+// %% TODO
 // Get all services except those with an ID in the set given
 func (h *Helper) GetAllServicesExcept(ignored flux.ServiceIDSet) ([]*Service, error) {
 	return []*Service{}, nil
 }
 
+// %% TODO
 // Get the services mentioned, along with their containers.
 func (h *Helper) GetServices(ids []flux.ServiceID) ([]*Service, error) {
 	return []*Service{}, nil
 }
 
+// %%% TODO
 // Get the images available for the services given. An image may be
 // mentioned more than once in the services, but will only be fetched
 // once.
