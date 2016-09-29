@@ -1,0 +1,116 @@
+// releaser.go releaseAllToLatest
+
+        // Get a list of all the services
+        serviceIDs, err := r.helper.AllServices()
+
+        // Go find all the services with containers with images
+	containerMap, err := r.helper.AllReleasableImagesFor(ServiceIDs(serviceIDs).Without(exclude))
+
+	// Each service is running multiple images.
+	// Each image may need to be upgraded, and trigger a release.
+
+	regradeMap := map[flux.ServiceID][]containerRegrade{}
+	for serviceID, containers := range containerMap {
+		for _, container := range containers {
+			currentImageID := flux.ParseImageID(container.Image)
+
+                        // Get the repository for an image that could be upgrade
+			imageRepo, err := r.helper.RegistryGetRepository(currentImageID.Repository())
+
+It could simply be:
+
+regrades := helper.GetAllRegrades(excluding)
+
+where the algorithm there is, in pseudo-code:
+
+services := GetAllServicesWithContainers(ignoringThese)
+repos := CollectImageRepos
+for each repo:
+  get image metadata, put in map
+for each service container, look for image metadata
+
+This does two walks over the services (in memory, so not terrible).
+
+Actually it'd be good to consult the git repo here as well, to
+eliminate services that aren't even in the repo before proceeding with
+expensive things like asking for the image metadata. But that can come
+later.
+
+
+// releaser.go
+// releaseAllForImage
+
+        // Again, get all the services
+        serviceIDs, err := r.helper.AllServices()
+
+	containerMap, err := r.helper.AllReleasableImagesFor(ServiceIDs(serviceIDs).Without(exclude))
+
+	// Each service is running multiple images.
+	// Each image may need to be modified, and trigger a release.
+
+	regradeMap := map[flux.ServiceID][]containerRegrade{}
+	for serviceID, containers := range containerMap {
+		for _, container := range containers {
+			candidate := flux.ParseImageID(container.Image)
+			if candidate.Repository() != target.Repository() {
+				continue
+			}
+			if candidate == target {
+				res = append(res, r.releaseActionPrintf("Service %s image %s matches the target image exactly. Skipping.", serviceID, candidate))
+				continue
+			}
+			regradeMap[serviceID] = append(regradeMap[serviceID], containerRegrade{
+				container: container.Name,
+				current:   candidate,
+				target:    target,
+			})
+		}
+	}
+
+// This one is a bit different, since the target image is already
+given, and we don't have to look it up (although we could valiudate
+it, but that's a different story).
+
+regrades := helper.GetAllRegrades(excluding, [image])
+
+and that algo is something like:
+
+services := GetAllServicesWithContainers(excluding)
+go through each service container; if it uses an image repo mentioned,
+add it to regrades.
+
+// releaser.go
+// releaseOneToLatest
+
+        // Get the containers, given the service
+	containers, err := r.helper.PlatformContainersFor(namespace, service)
+
+	// Each service is running multiple images.
+	// Each image may need to be modified, and trigger a release.
+
+	var regrades []containerRegrade
+	for _, container := range containers {
+		imageID := flux.ParseImageID(container.Image)
+                // get the available images                
+		imageRepo, err := r.helper.RegistryGetRepository(imageID.Repository())
+
+// Alternative:
+helper.GetRegradeToLatest([serviceID])
+
+I think we want to have a similar algorithm to releaseAllToLatest, that is
+
+Get the specific service, with its containers
+.. collect the image repos, find the available images, fill them in.
+
+// releaseOne
+
+helper.GetRegrades([services], [images]) // exclude things first
+
+A combination of previous versions.
+
+// *** server.go
+
+ListServices gets all the services (or restricted by namespace; bleh),
+then all the containers. Just get full services+containers.
+
+ListImages needs a similar treatment to GetAllRegrades.

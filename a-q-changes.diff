@@ -1,0 +1,512 @@
+diff --git a/helper.go b/helper.go
+index ca1e80b..20c5352 100644
+--- a/helper.go
++++ b/helper.go
+@@ -34,84 +34,54 @@ func NewHelper(
+ 	}
+ }
+ 
+-func (h *Helper) AllServices() (res []ServiceID, err error) {
++// ImagesFor gets the image metadata for the images used in the
++// servics given.
++func (h *Helper) ImagesFor(services []Service) (res map[ServiceID][]Container, err error) {
+ 	defer func(begin time.Time) {
+ 		h.duration.With(
+-			"method", "AllServices",
++			"method", "ImagesFor",
+ 			"success", fmt.Sprint(err == nil),
+ 		).Observe(time.Since(begin).Seconds())
+ 	}(time.Now())
+ 
+-	namespaces, err := h.platform.Namespaces()
+-	if err != nil {
+-		return nil, errors.Wrap(err, "fetching platform namespaces")
++	images := map[string][]ImageDescription{}
++	for _, service := range services {
++		for _, container := range service.Containers {
++			image := container.Current
++			images[image.Repository] = make([]ImageDescription)
++		}
+ 	}
+ 
+-	for _, namespace := range namespaces {
+-		ids, err := h.NamespaceServices(namespace)
++	var errs []error
++	for repository, _ := range images {
++		registryRepo, err := h.RegistryGetRepository(repository)
+ 		if err != nil {
+-			return nil, err
++			append(errs, err)
+ 		}
+-		res = append(res, ids...)
++		images[repository] = makeImageDescriptions(registryRepo)
+ 	}
+ 
+-	return res, nil
+-}
+-
+-func (h *Helper) NamespaceServices(namespace string) (res []ServiceID, err error) {
+-	defer func(begin time.Time) {
+-		h.duration.With(
+-			"method", "NamespaceServices",
+-			"success", fmt.Sprint(err == nil),
+-		).Observe(time.Since(begin).Seconds())
+-	}(time.Now())
+-
+-	services, err := h.platform.Services(namespace)
+-	if err != nil {
+-		return nil, errors.Wrapf(err, "fetching platform services for namespace %q", namespace)
+-	}
+-
+-	res = make([]ServiceID, len(services))
+-	for i, service := range services {
+-		res[i] = MakeServiceID(namespace, service.Name)
++	res = map[ServiceID][]Container{}
++	for _, service := range services {
++		res[service.ID] = makeContainersWithImages(service, images)
+ 	}
+-
+ 	return res, nil
+ }
+ 
+-// AllReleasableImagesFor returns a map of service IDs to the
+-// containers with images that may be regraded. It leaves out any
+-// services that cannot have containers associated with them, e.g.,
+-// because there is no matching deployment.
+-func (h *Helper) AllReleasableImagesFor(serviceIDs []ServiceID) (res map[ServiceID][]platform.Container, err error) {
+-	defer func(begin time.Time) {
+-		h.duration.With(
+-			"method", "AllReleasableImagesFor",
+-			"success", fmt.Sprint(err == nil),
+-		).Observe(time.Since(begin).Seconds())
+-	}(time.Now())
+-
+-	res = map[ServiceID][]platform.Container{}
+-	for _, serviceID := range serviceIDs {
+-		namespace, service := serviceID.Components()
+-		containers, err := h.platform.ContainersFor(namespace, service)
+-		if err != nil {
+-			switch err {
+-			case platform.ErrEmptySelector, platform.ErrServiceHasNoSelector, platform.ErrNoMatching, platform.ErrMultipleMatching, platform.ErrNoMatchingImages:
+-				continue
+-			default:
+-				return nil, errors.Wrapf(err, "fetching containers for %s", serviceID)
+-			}
+-		}
+-		if len(containers) <= 0 {
+-			continue
+-		}
+-		res[serviceID] = containers
++func makeImageDescriptions(repo registry.Repository) []ImageDescription {
++	res := []ImageDescription{}
++	for _, image := range repo.Images {
++		res = append(res, ImageDescription{
++			ID:        MakeImageID(image.Registry, image.Name, image.Tag),
++			CreatedAt: image.CreatedAt,
++		})
+ 	}
+-	return res, nil
+ }
+ 
+-func (h *Helper) PlatformService(namespace, service string) (res platform.Service, err error) {
++// PlatformServices asks the platform for a list of the services,
++// either those running in the namespace given, or if it is empty,
++// those running in all namespaces.
++func (h *Helper) PlatformServices(namespace string) (res []platform.Service, err error) {
+ 	defer func(begin time.Time) {
+ 		h.duration.With(
+ 			"method", "PlatformService",
+@@ -119,7 +89,12 @@ func (h *Helper) PlatformService(namespace, service string) (res platform.Servic
+ 		).Observe(time.Since(begin).Seconds())
+ 	}(time.Now())
+ 
+-	return h.platform.Service(namespace, service)
++	return h.platform.Services(namespace)
++}
++
++func (h *Helper) PlatformService(serviceID flux.ServiceID) (platform.Service, error) {
++	ns, s := serviceID.Components()
++	return h.Service(ns, s)
+ }
+ 
+ func (h *Helper) PlatformNamespaces() (res []string, err error) {
+@@ -133,17 +108,6 @@ func (h *Helper) PlatformNamespaces() (res []string, err error) {
+ 	return h.platform.Namespaces()
+ }
+ 
+-func (h *Helper) PlatformContainersFor(namespace, service string) (res []platform.Container, err error) {
+-	defer func(begin time.Time) {
+-		h.duration.With(
+-			"method", "PlatformContainersFor",
+-			"success", fmt.Sprint(err == nil),
+-		).Observe(time.Since(begin).Seconds())
+-	}(time.Now())
+-
+-	return h.platform.ContainersFor(namespace, service)
+-}
+-
+ func (h *Helper) RegistryGetRepository(repository string) (res *registry.Repository, err error) {
+ 	defer func(begin time.Time) {
+ 		h.duration.With(
+diff --git a/platform/kubernetes/kubernetes.go b/platform/kubernetes/kubernetes.go
+index 125c194..b767ff5 100644
+--- a/platform/kubernetes/kubernetes.go
++++ b/platform/kubernetes/kubernetes.go
+@@ -125,17 +125,17 @@ func (c *Cluster) Service(namespace, service string) (platform.Service, error) {
+ 		}
+ 		return platform.Service{}, errors.Wrap(err, "fetching service "+namespace+"/"+service)
+ 	}
+-	return c.makePlatformService(apiService), nil
++	ps, err := c.podControllers(namespace)
++	if err != nil {
++		return errors.Wrap(err, "fetching replication controllers / deployments")
++	}
++	s := c.makePlatformService(apiService, ps)
++	return s, nil
+ }
+ 
+-// Services returns the set of services currently active on the platform in the
+-// given namespace. Maybe it makes sense to move the namespace to the
+-// constructor? Depends on how it will be used. For now it is here.
+-//
+-// The user is expected to list services, and then choose the one that will
+-// receive a release. Releases operate on replication controllers, not services.
+-// For now, we make a simplifying assumption that there is a one-to-one mapping
+-// between services and replication controllers.
++// Services returns the set of services currently active on the
++// platform in the given namespace. If the namespace is empty, return
++// services in all namespaces.
+ func (c *Cluster) Services(namespace string) ([]platform.Service, error) {
+ 	apiServices, err := c.services(namespace)
+ 	if err != nil {
+@@ -281,7 +281,28 @@ func (p podController) templateContainers() []api.Container {
+ 	return nil
+ }
+ 
+-func (c *Cluster) podControllerFor(namespace, serviceName string) (res podController, err error) {
++func (c *Cluster) podControllers(namespace string) ([]podController, error) {
++	res := []podController{}
++
++	rclist, err := c.client.ReplicationControllers(namespace).List(api.ListOptions{})
++	if err != nil {
++		return res, errors.Wrap(err, "fetching replication controllers for ns "+namespace)
++	}
++	for _, rc := range rclist.Items {
++		res = append(res, podController{ReplicationController: rc})
++	}
++
++	deplist, err := c.client.Deployments(namespace).List(api.ListOptions{})
++	if err != nil {
++		return res, errors.Wrap(err, "fetching deployments for ns "+namespace)
++	}
++	for _, d := range deplist.Items {
++		res = append(res, podController{Deployment: d})
++	}
++	return res, nil
++}
++
++func (c *Cluster) xxx_podControllerFor(namespace, serviceName string) (res podController, err error) {
+ 	res = podController{}
+ 
+ 	service, err := c.service(namespace, serviceName)
+@@ -375,38 +396,15 @@ func (c *Cluster) podControllerFor(namespace, serviceName string) (res podContro
+ 	return res, nil
+ }
+ 
+-// ContainersFor returns a list of container names with the image
+-// specified to run in that container, for a particular service. This
+-// is useful to see which images a particular service is presently
+-// running, to judge whether a release is needed.
+-func (c *Cluster) ContainersFor(namespace, serviceName string) ([]platform.Container, error) {
+-	pc, err := c.podControllerFor(namespace, serviceName)
+-	if err != nil {
+-		return nil, err
+-	}
+-
+-	var containers []platform.Container
+-	for _, container := range pc.templateContainers() {
+-		containers = append(containers, platform.Container{
+-			Image: container.Image,
+-			Name:  container.Name,
+-		})
+-	}
+-	if len(containers) <= 0 {
+-		return nil, platform.ErrNoMatchingImages
+-	}
+-	return containers, nil
+-}
+-
+-func (c *Cluster) makePlatformServices(apiServices []api.Service) []platform.Service {
++func (c *Cluster) makePlatformServices(apiServices []api.Service, podControllers []podController) []platform.Service {
+ 	platformServices := make([]platform.Service, len(apiServices))
+ 	for i, s := range apiServices {
+-		platformServices[i] = c.makePlatformService(s)
++		platformServices[i] = c.makePlatformService(s, podControllers)
+ 	}
+ 	return platformServices
+ }
+ 
+-func (c *Cluster) makePlatformService(s api.Service) platform.Service {
++func (c *Cluster) makePlatformService(s api.Service, podControllers []podController) platform.Service {
+ 	metadata := map[string]string{
+ 		"created_at":       s.CreationTimestamp.String(),
+ 		"resource_version": s.ResourceVersion,
+@@ -414,6 +412,13 @@ func (c *Cluster) makePlatformService(s api.Service) platform.Service {
+ 		"type":             string(s.Spec.Type),
+ 	}
+ 
++	var containers []api.Container
++	for _, pc := range podControllers {
++		if ps.matchFor(s) {
++
++		}
++	}
++
+ 	var status string
+ 	if summary, ok := c.status.getRegradeProgress(platform.NamespacedService{s.Namespace, s.Name}); ok {
+ 		status = summary
+diff --git a/platform/platform.go b/platform/platform.go
+index e5fd17b..c3cb45d 100644
+--- a/platform/platform.go
++++ b/platform/platform.go
+@@ -16,10 +16,11 @@ import (
+ // all supported platforms, but right now it looks a lot like a Kubernetes
+ // service.
+ type Service struct {
+-	Name     string
+-	IP       string
+-	Metadata map[string]string // a grab bag of goodies, likely platform-specific
+-	Status   string            // A status summary for display
++	Name       string
++	IP         string
++	Metadata   map[string]string // a grab bag of goodies, likely platform-specific
++	Status     string            // A status summary for display
++	Containers []Container
+ }
+ 
+ // A Container represents a container specification in a pod. The Name
+diff --git a/server.go b/server.go
+index 7dc0b83..d46f9cb 100644
+--- a/server.go
++++ b/server.go
+@@ -55,12 +55,6 @@ func NewServer(
+ 	}
+ }
+ 
+-// The server methods are deliberately awkward, cobbled together from existing
+-// platform and registry APIs. I want to avoid changing those components until I
+-// get something working. There's also a lot of code duplication here for the
+-// same reason: let's not add abstraction until it's merged, or nearly so, and
+-// it's clear where the abstraction should exist.
+-
+ func (s *server) ListServices(namespace string) (res []ServiceStatus, err error) {
+ 	defer func(begin time.Time) {
+ 		s.metrics.ListServicesDuration.With(
+@@ -69,57 +63,35 @@ func (s *server) ListServices(namespace string) (res []ServiceStatus, err error)
+ 		).Observe(time.Since(begin).Seconds())
+ 	}(time.Now())
+ 
+-	var serviceIDs []ServiceID
+-	if namespace == "" {
+-		serviceIDs, err = s.helper.AllServices()
+-	} else {
+-		serviceIDs, err = s.helper.NamespaceServices(namespace)
+-	}
++	services, err = s.helper.PlatformServices(namespace)
++
+ 	if err != nil {
+ 		return nil, errors.Wrapf(err, "fetching services for namespace %s on the platform", namespace)
+ 	}
+ 
+-	var (
+-		statusc = make(chan ServiceStatus)
+-		errc    = make(chan error)
+-	)
+-	for _, serviceID := range serviceIDs {
+-		go func(serviceID ServiceID) {
+-			s.maxPlatform <- struct{}{}
+-			defer func() { <-s.maxPlatform }()
+-
+-			c, err := s.containersFor(serviceID, false)
+-			if err != nil {
+-				errc <- errors.Wrapf(err, "fetching containers for %s", serviceID)
+-				return
+-			}
+-
+-			namespace, service := serviceID.Components()
+-			platformSvc, err := s.helper.PlatformService(namespace, service)
+-			if err != nil {
+-				errc <- errors.Wrapf(err, "getting platform service %s", serviceID)
+-				return
+-			}
+-
+-			statusc <- ServiceStatus{
+-				ID:         serviceID,
+-				Containers: c,
+-				Status:     platformSvc.Status,
+-				Automated:  s.automator.IsAutomated(namespace, service),
+-			}
+-		}(serviceID)
+-	}
+-	for i := 0; i < len(serviceIDs); i++ {
+-		select {
+-		case err := <-errc:
+-			s.helper.Log("err", err)
+-		case status := <-statusc:
+-			res = append(res, status)
++	for _, service := range services {
++		ns, s := service.ID.Components()
++		status := ServiceStatus{
++			ID:         service.ID,
++			Containers: makeServiceContainers(service.Containers),
++			Status:     service.Status,
++			Automated:  s.automator.IsAutomated(ns, s),
+ 		}
++		res = append(res, status)
+ 	}
+ 	return res, nil
+ }
+ 
++func makeServiceContainers(cs []platform.Container) (res []Container) {
++	res = make([]Container, len(cs))
++	for i, c := range cs {
++		res[i] = Container{
++			Name:    c.Name,
++			Current: ImageDescription{ID: ParseImageID(c.Image)},
++		}
++	}
++}
++
+ func (s *server) ListImages(spec ServiceSpec) (res []ImageStatus, err error) {
+ 	defer func(begin time.Time) {
+ 		s.metrics.ListImagesDuration.With(
+@@ -128,47 +100,28 @@ func (s *server) ListImages(spec ServiceSpec) (res []ImageStatus, err error) {
+ 		).Observe(time.Since(begin).Seconds())
+ 	}(time.Now())
+ 
+-	serviceIDs, err := func() ([]ServiceID, error) {
++	services, err := func() ([]ServiceID, error) {
+ 		if spec == ServiceSpecAll {
+-			return s.helper.AllServices()
++			return s.helper.PlatformServices()
+ 		}
+-		id, err := ParseServiceID(string(spec))
+-		return []ServiceID{id}, err
++		s, err := s.helper.PlatformOneService(ParseServiceID(string(spec)))
++		return []platform.Service{s}, err
+ 	}()
+ 	if err != nil {
+-		return nil, errors.Wrapf(err, "fetching service ID(s)")
++		return nil, errors.Wrapf(err, "fetching services from platform")
+ 	}
+ 
+-	var (
+-		statusc = make(chan ImageStatus)
+-		errc    = make(chan error)
+-	)
+-	for _, serviceID := range serviceIDs {
+-		go func(serviceID ServiceID) {
+-			s.maxPlatform <- struct{}{}
+-			defer func() { <-s.maxPlatform }()
+-
+-			c, err := s.containersFor(serviceID, true)
+-			if err != nil {
+-				errc <- errors.Wrapf(err, "fetching containers for %s", serviceID)
+-				return
+-			}
+-
+-			statusc <- ImageStatus{
+-				ID:         serviceID,
+-				Containers: c,
+-			}
+-		}(serviceID)
+-	}
+-	for i := 0; i < len(serviceIDs); i++ {
+-		select {
+-		case err := <-errc:
+-			s.helper.Log("err", err)
+-		case status := <-statusc:
+-			res = append(res, status)
+-		}
++	serviceContainers, err := s.helper.ContainersFor(services)
++	if err != nil {
++		return nil, errors.Wrap(err, "fetching image metadata for service containers")
+ 	}
+ 
++	for i, service := range services {
++		res = append(res, ImageStatus{
++			ID:         service.ID,
++			Containers: serviceContainers[i],
++		})
++	}
+ 	return res, nil
+ }
+ 
+@@ -229,52 +182,6 @@ func (s *server) GetRelease(id ReleaseID) (ReleaseJob, error) {
+ 	return s.releaser.GetJob(id)
+ }
+ 
+-func (s *server) containersFor(id ServiceID, includeAvailable bool) (res []Container, _ error) {
+-	namespace, service := id.Components()
+-	containers, err := s.helper.PlatformContainersFor(namespace, service)
+-	if err != nil {
+-		return nil, errors.Wrapf(err, "fetching containers for %s", id)
+-	}
+-
+-	var errs compositeError
+-	for _, container := range containers {
+-		imageID := ParseImageID(container.Image)
+-
+-		// We may not be able to get image info from the repository,
+-		// but it's still worthwhile returning what we know.
+-		current := ImageDescription{ID: imageID}
+-		var available []ImageDescription
+-
+-		if includeAvailable {
+-			imageRepo, err := s.helper.RegistryGetRepository(imageID.Repository())
+-			if err != nil {
+-				errs = append(errs, errors.Wrapf(err, "fetching image repo for %s", imageID))
+-			} else {
+-				for _, image := range imageRepo.Images {
+-					description := ImageDescription{
+-						ID:        ParseImageID(image.String()),
+-						CreatedAt: image.CreatedAt,
+-					}
+-					available = append(available, description)
+-					if image.String() == container.Image {
+-						current = description
+-					}
+-				}
+-			}
+-		}
+-		res = append(res, Container{
+-			Name:      container.Name,
+-			Current:   current,
+-			Available: available,
+-		})
+-	}
+-
+-	if len(errs) > 0 {
+-		return res, errors.Wrap(errs, "one or more errors fetching image repos")
+-	}
+-	return res, nil
+-}
+-
+ type compositeError []error
+ 
+ func (e compositeError) Error() string {
+diff --git a/service.go b/service.go
+index 39a0432..1f7b794 100644
+--- a/service.go
++++ b/service.go
+@@ -104,6 +104,10 @@ func ParseImageID(s string) ImageID {
+ 	return ImageID(s) // technically all strings are valid
+ }
+ 
++func MakeImageID(reg, name, tag string) ImageID {
++	return fmt.Sprintf("%s/%s:%s", reg, name, tag)
++}
++
+ func (id ImageID) Components() (registry, name, tag string) {
+ 	s := string(id)
+ 	toks := strings.SplitN(s, "/", 3)

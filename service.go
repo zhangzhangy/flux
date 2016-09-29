@@ -98,6 +98,30 @@ func (id ServiceID) Components() (namespace, service string) {
 	return toks[0], toks[1]
 }
 
+type ServiceIDSet map[ServiceID]struct{}
+
+func (s ServiceIDSet) Add(ids []ServiceID) {
+	for _, id := range ids {
+		s[id] = struct{}{}
+	}
+}
+
+func (s ServiceIDSet) Contains(id ServiceID) bool {
+	_, ok := s[id]
+	return ok
+}
+
+type ServiceIDs []ServiceID
+
+func (ids ServiceIDs) Without(set ServiceIDSet) (res ServiceIDs) {
+	for _, id := range ids {
+		if !set.Contains(id) {
+			res = append(res, id)
+		}
+	}
+	return res
+}
+
 type ImageID string // "quay.io/weaveworks/helloworld:v1"
 
 func ParseImageID(s string) ImageID {
@@ -134,13 +158,17 @@ type ServiceSpec string // ServiceID or "<all>"
 
 func ParseServiceSpec(s string) (ServiceSpec, error) {
 	if s == string(ServiceSpecAll) {
-		return ServiceSpec(s), nil
+		return ServiceSpecAll, nil
 	}
 	id, err := ParseServiceID(s)
 	if err != nil {
 		return "", errors.Wrap(err, "invalid service spec")
 	}
 	return ServiceSpec(id), nil
+}
+
+func (s ServiceSpec) AsID() (ServiceID, error) {
+	return ParseServiceID(string(s))
 }
 
 // ImageSpec is an ImageID, or "<all latest>" (update all containers
