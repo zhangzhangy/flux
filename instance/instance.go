@@ -113,6 +113,16 @@ func (h *Instance) CollectAvailableImages(services []platform.Service) (ImageMap
 	return images, nil
 }
 
+// Create an image map containing exact images. At present this
+// assumes they exist; but it may in the future be made to verify so.
+func (h *Instance) ExactImages(images []flux.ImageID) (ImageMap, error) {
+	m := ImageMap{}
+	for _, id := range images {
+		m[id.Repository()] = []flux.ImageDescription{flux.ImageDescription{ID: id}}
+	}
+	return m, nil
+}
+
 func (h *Instance) PlatformRegrade(specs []platform.RegradeSpec) (err error) {
 	defer func(begin time.Time) {
 		h.duration.With(
