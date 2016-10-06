@@ -252,7 +252,7 @@ func main() {
 			os.Exit(1)
 		}
 
-		eventWriter, eventReader = db, db
+		eventWriter, eventReader = defaultEventReadWriter{db}, defaultEventReadWriter{db}
 
 		if *slackWebhookURL != "" {
 			eventWriter = history.TeeWriter(eventWriter, history.NewSlackEventWriter(
@@ -351,3 +351,15 @@ func main() {
 type defaultPlatformer struct{ k8s *kubernetes.Cluster }
 
 func (p defaultPlatformer) Platform(flux.InstanceID) (platform.Platform, error) { return p.k8s, nil }
+
+type defaultEventReadWriter struct{ db history.DB }
+
+func (rw defaultEventReadWriter) LogEvent(namespace, service, msg string) error {
+	return rw.db.LogEvent(flux.DefaultInstanceID, namespace, service, msg)
+}
+func (rw defaultEventReadWriter) AllEvents() ([]history.Event, error) {
+	return rw.db.AllEvents(flux.DefaultInstanceID)
+}
+func (rw defaultEventReadWriter) EventsForService(namespace, service string) ([]history.Event, error) {
+	return rw.db.EventsForService(flux.DefaultInstanceID, namespace, service)
+}
