@@ -25,9 +25,9 @@ type server struct {
 }
 
 type Automator interface {
-	Automate(namespace, service string) error
-	Deautomate(namespace, service string) error
-	IsAutomated(namespace, service string) bool
+	Automate(instanceID flux.InstanceID, namespace, service string) error
+	Deautomate(instanceID flux.InstanceID, namespace, service string) error
+	IsAutomated(instanceID flux.InstanceID, namespace, service string) bool
 }
 
 type Metrics struct {
@@ -106,7 +106,7 @@ func (s *server) ListServices(inst flux.InstanceID, namespace string) (res []flu
 				ID:         serviceID,
 				Containers: c,
 				Status:     platformSvc.Status,
-				Automated:  s.automator.IsAutomated(namespace, service),
+				Automated:  s.automator.IsAutomated(inst, namespace, service),
 			}
 		}(serviceID)
 	}
@@ -214,12 +214,12 @@ func (s *server) History(inst flux.InstanceID, spec flux.ServiceSpec) (res []flu
 
 func (s *server) Automate(inst flux.InstanceID, service flux.ServiceID) error {
 	ns, svc := service.Components()
-	return s.automator.Automate(ns, svc)
+	return s.automator.Automate(inst, ns, svc)
 }
 
 func (s *server) Deautomate(inst flux.InstanceID, service flux.ServiceID) error {
 	ns, svc := service.Components()
-	return s.automator.Deautomate(ns, svc)
+	return s.automator.Deautomate(inst, ns, svc)
 }
 
 func (s *server) PostRelease(inst flux.InstanceID, spec flux.ReleaseJobSpec) (flux.ReleaseID, error) {
