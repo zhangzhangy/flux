@@ -25,26 +25,29 @@ type Instance struct {
 	duration metrics.Histogram
 
 	log.Logger
-	flux.EventReadWriter
+	flux.EventReader
+	flux.EventWriter
 }
 
 func New(
 	platform *kubernetes.Cluster,
 	registry *registry.Client,
-	events history.EventReadWriter,
+	eventR history.EventReader,
+	eventW history.EventWriter,
 	logger log.Logger,
 	duration metrics.Histogram,
 ) *Helper {
 	return &Helper{
-		platform:        platform,
-		registry:        registry,
-		EventReadWriter: events,
-		Logger:          logger,
-		duration:        duration,
+		platform:    platform,
+		registry:    registry,
+		EventReader: eventR,
+		EventWriter: eventW,
+		Logger:      logger,
+		duration:    duration,
 	}
 }
 
-func (h *Helper) AllServices(inst flux.InstanceID) (res []flux.ServiceID, err error) {
+func (h *Helper) AllServices() (res []flux.ServiceID, err error) {
 	defer func(begin time.Time) {
 		h.duration.With(
 			"method", "AllServices",
@@ -52,18 +55,13 @@ func (h *Helper) AllServices(inst flux.InstanceID) (res []flux.ServiceID, err er
 		).Observe(time.Since(begin).Seconds())
 	}(time.Now())
 
-	p, err := h.platformer.Platform(inst)
-	if err != nil {
-		return nil, errors.Wrapf(err, "fetching platform for %s", inst)
-	}
-
 	namespaces, err := p.Namespaces()
 	if err != nil {
 		return nil, errors.Wrap(err, "fetching platform namespaces")
 	}
 
 	for _, namespace := range namespaces {
-		ids, err := h.NamespaceServices(inst, namespace) // TODO(pb): flatten this to avoid another platform lookup!
+		ids, err := h.platform.NamespaceServices(namespace) // TODO(pb): flatten this to avoid another platform lookup!
 		if err != nil {
 			return nil, err
 		}
@@ -73,7 +71,7 @@ func (h *Helper) AllServices(inst flux.InstanceID) (res []flux.ServiceID, err er
 	return res, nil
 }
 
-func (h *Helper) NamespaceServices(inst flux.InstanceID, namespace string) (res []flux.ServiceID, err error) {
+func (h *Helper) NamespaceServices(namespace string) (res []flux.ServiceID, err error) {
 	defer func(begin time.Time) {
 		h.duration.With(
 			"method", "NamespaceServices",
@@ -81,12 +79,7 @@ func (h *Helper) NamespaceServices(inst flux.InstanceID, namespace string) (res 
 		).Observe(time.Since(begin).Seconds())
 	}(time.Now())
 
-	p, err := h.platformer.Platform(inst)
-	if err != nil {
-		return nil, errors.Wrapf(err, "fetching platform for %s", inst)
-	}
-
-	services, err := p.Services(namespace)
+	services, err := h.platform.Services(namespace)
 	if err != nil {
 		return nil, errors.Wrapf(err, "fetching platform services for namespace %q", namespace)
 	}
