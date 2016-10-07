@@ -1,4 +1,4 @@
-package helper
+package instance
 
 import (
 	"fmt"
@@ -13,28 +13,34 @@ import (
 	"github.com/weaveworks/fluxy/registry"
 )
 
-type Platformer interface {
-	Platform(flux.InstanceID) (platform.Platform, error)
+type Instancer interface {
+	Get(flux.InstanceID) (*instance.Instance, error)
 }
 
-type Helper struct {
-	platformer Platformer
-	registry   *registry.Client
-	logger     log.Logger
-	duration   metrics.Histogram
+type Instance struct {
+	instance flux.InstanceID
+	platform *kubernetes.Cluster
+	configDB *instance.DB
+	registry *registry.Client
+	duration metrics.Histogram
+
+	log.Logger
+	flux.EventReadWriter
 }
 
 func New(
-	platformer Platformer,
+	platform *kubernetes.Cluster,
 	registry *registry.Client,
+	events history.EventReadWriter,
 	logger log.Logger,
 	duration metrics.Histogram,
 ) *Helper {
 	return &Helper{
-		platformer: platformer,
-		registry:   registry,
-		logger:     logger,
-		duration:   duration,
+		platform:        platform,
+		registry:        registry,
+		EventReadWriter: events,
+		Logger:          logger,
+		duration:        duration,
 	}
 }
 

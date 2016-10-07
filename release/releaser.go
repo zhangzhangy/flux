@@ -22,7 +22,7 @@ import (
 )
 
 type releaser struct {
-	helper    *helper.Helper
+	instancer *instance.Instancer
 	repo      git.Repo
 	history   history.EventWriter
 	metrics   Metrics

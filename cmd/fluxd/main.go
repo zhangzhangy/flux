@@ -155,8 +155,6 @@ func main() {
 		}, []string{"method", "success"})
 	}
 
-	// Prerequisite for proceeding: migrate any database tables
-
 	// Registry component.
 	var reg *registry.Client
 	{
@@ -180,7 +178,7 @@ func main() {
 	}
 
 	// Platform component.
-	var platformer helper.Platformer
+	var platform *kubernetes.Cluster
 	{
 		var restClientConfig *restclient.Config
 
@@ -239,12 +237,11 @@ func main() {
 			logger.Log("services", len(services))
 		}
 
-		platformer = defaultPlatformer{k8s}
+		platform = k8s
 	}
 
 	// History component.
-	var eventWriter history.EventWriter
-	var eventReader history.EventReader
+    historyDB history.DB
 	{
 		db, err := historysql.NewSQL(dbDriver, *databaseSource)
 		if err != nil {
@@ -252,8 +249,7 @@ func main() {
 			os.Exit(1)
 		}
 
-		eventWriter, eventReader = defaultEventReadWriter{db}, defaultEventReadWriter{db}
-
+        // %%% Do something about this
 		if *slackWebhookURL != "" {
 			eventWriter = history.TeeWriter(eventWriter, history.NewSlackEventWriter(
 				http.DefaultClient,
@@ -346,20 +342,33 @@ func main() {
 	logger.Log("exit", <-errc)
 }
 
-// defaultPlatformer implements flux.Platformer by yielding the same wrapped
-// Kubernetes cluster for any instance ID.
-type defaultPlatformer struct{ k8s *kubernetes.Cluster }
-
-func (p defaultPlatformer) Platform(flux.InstanceID) (platform.Platform, error) { return p.k8s, nil }
-
-type defaultEventReadWriter struct{ db history.DB }
-
-func (rw defaultEventReadWriter) LogEvent(namespace, service, msg string) error {
-	return rw.db.LogEvent(flux.DefaultInstanceID, namespace, service, msg)
+type singletonInstancer struct {
+	instance flux.InstanceID
+	k8s      *kubernetes.Cluster
+	registry *registry.Client
+	history  history.DB
+	log      log.Logger
+	duration metrics.Histogram
 }
-func (rw defaultEventReadWriter) AllEvents() ([]history.Event, error) {
-	return rw.db.AllEvents(flux.DefaultInstanceID)
+
+func (s *singletonInstancer) Get(instance flux.InstanceID) (*instance.Instance, error) {
+	if instance != s.instance {
+		return errors.New("instance not found: " + string(instance))
+	}
+	return instance.New(instance, s.k8s, s.registry, instanceEventReadWriter{s.instance, s.history}, log, s.duration), nil
 }
-func (rw defaultEventReadWriter) EventsForService(namespace, service string) ([]history.Event, error) {
-	return rw.db.EventsForService(flux.DefaultInstanceID, namespace, service)
+
+type instanceEventReadWriter struct {
+	instance flux.InstanceID
+	db       history.DB
+}
+
+func (rw instanceEventReadWriter) LogEvent(namespace, service, msg string) error {
+	return rw.db.LogEvent(rw.instance, namespace, service, msg)
+}
+func (rw instanceEventReadWriter) AllEvents() ([]history.Event, error) {
+	return rw.db.AllEvents(rw.instance)
+}
+func (rw instanceEventReadWriter) EventsForService(namespace, service string) ([]history.Event, error) {
+	return rw.db.EventsForService(rw.instance, namespace, service)
 }

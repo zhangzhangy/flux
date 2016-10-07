@@ -27,6 +27,11 @@ type EventReader interface {
 	EventsForService(namespace, service string) ([]Event, error)
 }
 
+type EventReadWriter interface {
+	EventReader
+	EventWriter
+}
+
 type DB interface {
 	LogEvent(inst flux.InstanceID, namespace, service, msg string) error
 	AllEvents(inst flux.InstanceID) ([]Event, error)
