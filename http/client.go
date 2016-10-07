@@ -57,3 +57,11 @@ func (c *client) Unlock(id flux.ServiceID) error {
 func (c *client) History(s flux.ServiceSpec) ([]flux.HistoryEntry, error) {
 	return invokeHistory(c.client, c.router, c.endpoint, s)
 }
+
+func (c *client) GetConfig() (flux.Config, error) {
+	return invokeGetConfig(c.client, c.router, c.endpoint)
+}
+
+func (c *client) SetConfig(cfg flux.Config) error {
+	return invokeSetConfig(c.client, c.router, c.endpoint, cfg)
+}

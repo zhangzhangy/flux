@@ -36,6 +36,7 @@ var rootLongHelp = strings.TrimSpace(`
 fluxctl helps you deploy your code.
 
 Workflow:
+	fluxctl set-config --file myconfig.yaml                      # Tell flux how to access your manifests
   fluxctl list-services                                        # Which services are running?
   fluxctl list-images --service=default/foo                    # Which images are running/available?
   fluxctl release --service=default/foo --update-image=bar:v2  # Release new version.
@@ -66,6 +67,8 @@ func (opts *rootOpts) Command() *cobra.Command {
 		newServiceDeautomate(svcopts).Command(),
 		newServiceLock(svcopts).Command(),
 		newServiceUnlock(svcopts).Command(),
+		newServiceGetConfig(svcopts).Command(),
+		newServiceSetConfig(svcopts).Command(),
 	)
 
 	return cmd

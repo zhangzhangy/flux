@@ -45,6 +45,7 @@ func NewHandler(s flux.Service, r *mux.Router, logger log.Logger, h metrics.Hist
 		"Lock":         handleLock,
 		"Unlock":       handleUnlock,
 		"History":      handleHistory,
+		"GetConfig":    handleGetConfig,
 	} {
 		var handler http.Handler
 		handler = handlerFunc(s)
@@ -476,6 +477,48 @@ func invokeHistory(client *http.Client, router *mux.Router, endpoint string, s f
 	}
 
 	var res []flux.HistoryEntry
+	if err := json.NewDecoder(resp.Body).Decode(&res); err != nil {
+		return nil, errors.Wrap(err, "decoding response from server")
+	}
+
+	return res, nil
+}
+
+func handleGetConfig() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		c, err := s.Config()
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			fmt.Fprintf(w, err.Error())
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		if err := json.NewEncoder(w).Encode(c); err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			fmt.Fprintf(w, err.Error())
+			return
+		}
+	})
+}
+
+func invokeGetConfig(client *http.Client, router *mux.Router, endpoint string) (flux.Config, error) {
+	u, err := makeURL(endpoint, router, "GetConfig")
+	if err != nil {
+		return nil, errors.Wrap(err, "constructing URL")
+	}
+
+	req, err := http.NewRequest("GET", u.String(), nil)
+	if err != nil {
+		return nil, errors.Wrapf(err, "constructing request %s", u)
+	}
+
+	resp, err := executeRequest(client, req)
+	if err != nil {
+		return nil, errors.Wrap(err, "executing HTTP request")
+	}
+
+	var res flux.Config
 	if err := json.NewDecoder(resp.Body).Decode(&res); err != nil {
 		return nil, errors.Wrap(err, "decoding response from server")
 	}

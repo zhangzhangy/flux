@@ -21,6 +21,8 @@ type Service interface {
 	Lock(ServiceID) error
 	Unlock(ServiceID) error
 	History(ServiceSpec) ([]HistoryEntry, error)
+	GetConfig() (Config, error)
+	SetConfig(Config) error
 }
 
 const (
