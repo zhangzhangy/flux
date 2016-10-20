@@ -29,9 +29,9 @@ build/migrations.tar: $(MIGRATIONS)
 	tar cf $@ db/migrations
 
 build/.%.done: docker/Dockerfile.%
-	mkdir -p ./build/docker
-	cp $^ ./build/docker/
-	${DOCKER} build -t weaveworks/fluxy -f build/$< ./build/docker
+	mkdir -p ./build/docker/$*
+	cp $^ ./build/docker/$*/
+	${DOCKER} build -t weaveworks/$* -f build/docker/$*/Dockerfile.$* ./build/docker/$*
 	touch $@
 
 build/.fluxd.done: build/fluxd ./cmd/fluxd/*.crt build/kubectl
