@@ -1,7 +1,6 @@
 FROM alpine:3.3
 WORKDIR /home/flux
-RUN apk add --no-cache git>=2.3.0 openssh python py-yaml
+RUN apk add --no-cache ca-certificates
 COPY ./kubectl /usr/local/bin/
-COPY ./ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 COPY ./fluxd /usr/local/bin/
 ENTRYPOINT [ "fluxd" ]
