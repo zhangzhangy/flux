@@ -71,7 +71,11 @@ func (s Service) ContainersOrNil() []Container {
 }
 
 func (s Service) ContainersOrError() ([]Container, error) {
-	return s.Containers.Containers, errors.New(s.Containers.Excuse)
+	var err error
+	if s.Containers.Excuse != "" {
+		err = errors.New(s.Containers.Excuse)
+	}
+	return s.Containers.Containers, err
 }
 
 // These errors all represent logical problems with platform
