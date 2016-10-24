@@ -1,6 +1,7 @@
 package rpc
 
 import (
+	"fmt"
 	"io"
 	"net/rpc"
 	"net/rpc/jsonrpc"
@@ -50,6 +51,7 @@ func (p *RPCPlatform) SomeServices(ids []flux.ServiceID) ([]platform.Service, er
 func (p *RPCPlatform) Regrade(spec []platform.RegradeSpec) error {
 	var regradeError platform.RegradeError
 	if err := p.client.Call("RPCClientPlatform.Regrade", spec, &regradeError); err != nil {
+		fmt.Printf("\n%+v\n\n", err)
 		return err
 	}
 	if len(regradeError) > 0 {
