@@ -592,11 +592,16 @@ func (r *releaser) releaseActionRegradeServices(services []flux.ServiceID, msg s
 			// Execute the regrades as a single transaction.
 			// Splat any errors into our results map.
 			transactionErr := rc.Instance.PlatformRegrade(specs)
-			if transactionErr != nil {
-				for ns, regradeErr := range transactionErr.(platform.RegradeError) {
-					id, _ := flux.ParseServiceID(fmt.Sprintf("%s/%s", ns.Namespace, ns.Service))
+			switch err := transactionErr.(type) {
+			case platform.RegradeError:
+				for id, regradeErr := range err {
 					results[id] = regradeErr
 				}
+				break
+			case nil:
+				break
+			default:
+				return "", transactionErr // FIXME: leaves a log message hanging
 			}
 
 			// Report individual service regrade results.

@@ -47,6 +47,14 @@ func (p *RPCClientPlatform) SomeServices(ids []flux.ServiceID, resp *[]platform.
 	return err
 }
 
-func (p *RPCClientPlatform) Regrade(spec []platform.RegradeSpec, _ *platform.RegradeError) error {
-	return p.p.Regrade(spec)
+func (p *RPCClientPlatform) Regrade(spec []platform.RegradeSpec, regradeError *platform.RegradeError) error {
+	switch err := p.p.Regrade(spec).(type) {
+	case platform.RegradeError:
+		*regradeError = err
+		return nil
+	case nil:
+		return nil
+	default:
+		return err
+	}
 }

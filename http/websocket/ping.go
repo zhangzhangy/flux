@@ -1,11 +1,13 @@
 package websocket
 
 import (
+	"fmt"
 	"io"
 	"sync"
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/pkg/errors"
 )
 
 const (
@@ -64,6 +66,7 @@ func (p *pingingWebsocket) Read(b []byte) (int, error) {
 	for p.reader == nil {
 		msgType, r, err := p.conn.NextReader()
 		if err != nil {
+			fmt.Printf("\n\n%+v\n", errors.Wrap(err, "next reader error"))
 			return 0, err
 		}
 		if msgType != websocket.BinaryMessage {
@@ -101,6 +104,9 @@ func (p *pingingWebsocket) Write(b []byte) (int, error) {
 
 // Close closes the connection
 func (p *pingingWebsocket) Close() error {
+	err := errors.New("closed websocket")
+	fmt.Printf("\nWebsocket closing\n%+v\n\n", err)
+
 	p.writeLock.Lock()
 	defer p.writeLock.Unlock()
 	p.pinger.Stop()

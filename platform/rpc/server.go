@@ -48,7 +48,14 @@ func (p *RPCPlatform) SomeServices(ids []flux.ServiceID) ([]platform.Service, er
 
 // Regrade tells the remote platform to apply some regrade specs.
 func (p *RPCPlatform) Regrade(spec []platform.RegradeSpec) error {
-	return p.client.Call("RPCClientPlatform.Regrade", spec, nil)
+	var regradeError platform.RegradeError
+	if err := p.client.Call("RPCClientPlatform.Regrade", spec, &regradeError); err != nil {
+		return err
+	}
+	if len(regradeError) > 0 {
+		return regradeError
+	}
+	return nil
 }
 
 // Close closes the connection to the remote platform, it does *not* cause the
