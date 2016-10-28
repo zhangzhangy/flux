@@ -56,8 +56,8 @@ func (opts *rootOpts) Command() *cobra.Command {
 		SilenceUsage:      true,
 		PersistentPreRunE: opts.PersistentPreRunE,
 	}
-	cmd.PersistentFlags().StringVarP(&opts.URL, "url", "u", "http://localhost:3030",
-		fmt.Sprintf("base URL of the fluxd API server; you can also set the environment variable %s", envVariableURL),
+	cmd.PersistentFlags().StringVarP(&opts.URL, "url", "u", "https://cloud.weave.works/api/flux",
+		fmt.Sprintf("base URL of the flux API server; you can also set the environment variable %s", envVariableURL),
 	)
 	cmd.PersistentFlags().StringVarP(&opts.Token, "token", "t", "",
 		"Weave Cloud token",

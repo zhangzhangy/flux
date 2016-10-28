@@ -21,7 +21,8 @@ import (
 )
 
 func NewRouter() *mux.Router {
-	r := mux.NewRouter()
+	base := mux.NewRouter()
+	r := base.PathPrefix("/api/flux").Subrouter()
 	r.NewRoute().Name("ListServices").Methods("GET").Path("/v3/services").Queries("namespace", "{namespace}") // optional namespace!
 	r.NewRoute().Name("ListImages").Methods("GET").Path("/v3/images").Queries("service", "{service}")
 	r.NewRoute().Name("PostRelease").Methods("POST").Path("/v3/release").Queries("service", "{service}", "image", "{image}", "kind", "{kind}")
@@ -33,7 +34,7 @@ func NewRouter() *mux.Router {
 	r.NewRoute().Name("History").Methods("GET").Path("/v3/history").Queries("service", "{service}")
 	r.NewRoute().Name("GetConfig").Methods("GET").Path("/v4/config").Queries("secrets", "{secrets}")
 	r.NewRoute().Name("SetConfig").Methods("POST").Path("/v4/config")
-	return r
+	return base
 }
 
 func NewHandler(s flux.Service, r *mux.Router, logger log.Logger, h metrics.Histogram) http.Handler {
