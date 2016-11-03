@@ -4,11 +4,14 @@ package flux
 // supplied as YAML (hence YAML annotations) and is transported as
 // JSON (hence JSON annotations).
 
+const secretReplacement = "******"
+
 type GitConfig struct {
-	URL    string `json:"URL" yaml:"URL"`
-	Path   string `json:"path" yaml:"path"`
-	Branch string `json:"branch" yaml:"branch"`
-	Key    string `json:"key" yaml:"key"`
+	URL       string `json:"URL" yaml:"URL"`
+	Path      string `json:"path" yaml:"path"`
+	Branch    string `json:"branch" yaml:"branch"`
+	Key       string `json:"key" yaml:"key"`
+	PublicKey string `json:"publicKey" yaml:"publicKey"`
 }
 
 type SlackConfig struct {
@@ -29,4 +32,19 @@ type InstanceConfig struct {
 	Git      GitConfig      `json:"git" yaml:"git"`
 	Slack    SlackConfig    `json:"slack" yaml:"slack"`
 	Registry RegistryConfig `json:"registry" yaml:"registry"`
+}
+
+type ConfigUpdate struct {
+	GenerateKey bool           `json:"generateKey"`
+	Config      InstanceConfig `json:"config"`
+}
+
+func (config InstanceConfig) HideSecrets() InstanceConfig {
+	for _, auth := range config.Registry.Auths {
+		auth.Auth = secretReplacement
+	}
+	if config.Git.Key != "" {
+		config.Git.Key = secretReplacement
+	}
+	return config
 }

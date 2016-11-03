@@ -16,7 +16,7 @@ type ClientService interface {
 	Unlock(flux.InstanceID, flux.ServiceID) error
 	History(flux.InstanceID, flux.ServiceSpec) ([]flux.HistoryEntry, error)
 	GetConfig(_ flux.InstanceID, secrets bool) (flux.InstanceConfig, error)
-	SetConfig(flux.InstanceID, flux.InstanceConfig) error
+	SetConfig(flux.InstanceID, flux.ConfigUpdate) (flux.InstanceConfig, error)
 }
 
 type DaemonService interface {

@@ -65,6 +65,6 @@ func (c *client) GetConfig(_ flux.InstanceID, secrets bool) (flux.InstanceConfig
 	return invokeGetConfig(c.client, c.token, c.router, c.endpoint, secrets)
 }
 
-func (c *client) SetConfig(_ flux.InstanceID, config flux.InstanceConfig) error {
-	return invokeSetConfig(c.client, c.token, c.router, c.endpoint, config)
+func (c *client) SetConfig(_ flux.InstanceID, update flux.ConfigUpdate) (flux.InstanceConfig, error) {
+	return invokeSetConfig(c.client, c.token, c.router, c.endpoint, update)
 }

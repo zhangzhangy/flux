@@ -20,8 +20,6 @@ const (
 
 	serviceLocked   = "Service locked."
 	serviceUnlocked = "Service unlocked."
-
-	secretReplacement = "******"
 )
 
 type Server struct {
@@ -307,31 +305,25 @@ func (s *Server) GetConfig(instID flux.InstanceID, includeSecrets bool) (flux.In
 
 	config := fullConfig.Settings
 	if !includeSecrets {
-		removeSecrets(&config)
+		config = config.HideSecrets()
 	}
 	return config, nil
 }
 
-func (s *Server) SetConfig(instID flux.InstanceID, updates flux.InstanceConfig) error {
+func (s *Server) SetConfig(instID flux.InstanceID, update flux.ConfigUpdate) (flux.InstanceConfig, error) {
 	inst, err := s.instancer.Get(instID)
 	if err != nil {
-		return err
+		return flux.InstanceConfig{}, err
 	}
-	return inst.UpdateConfig(applyConfigUpdates(updates))
+	if err := inst.UpdateConfig(applyConfigUpdates(update)); err != nil {
+		return flux.InstanceConfig{}, err
+	}
+	return flux.InstanceConfig{}, nil
 }
 
-func removeSecrets(config *flux.InstanceConfig) {
-	for _, auth := range config.Registry.Auths {
-		auth.Auth = secretReplacement
-	}
-	if config.Git.Key != "" {
-		config.Git.Key = secretReplacement
-	}
-}
-
-func applyConfigUpdates(updates flux.InstanceConfig) instance.UpdateFunc {
+func applyConfigUpdates(updates flux.ConfigUpdate) instance.UpdateFunc {
 	return func(config instance.Config) (instance.Config, error) {
-		config.Settings = updates
+		config.Settings = updates.Config
 		return config, nil
 	}
 }

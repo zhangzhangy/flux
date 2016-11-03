@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"io/ioutil"
 
 	"github.com/pkg/errors"
@@ -12,7 +13,8 @@ import (
 
 type setConfigOpts struct {
 	*rootOpts
-	file string
+	file   string
+	update flux.ConfigUpdate
 }
 
 func newSetConfig(parent *rootOpts) *setConfigOpts {
@@ -29,6 +31,7 @@ func (opts *setConfigOpts) Command() *cobra.Command {
 		RunE: opts.RunE,
 	}
 	cmd.Flags().StringVarP(&opts.file, "file", "f", "", "A file to upload as configuration; this will overwrite all values.")
+	cmd.Flags().BoolVar(&opts.update.GenerateKey, "generate-key", false, "Generate a key pair and return the public key for use as a deploy key.")
 	return cmd
 }
 
@@ -51,5 +54,20 @@ func (opts *setConfigOpts) RunE(_ *cobra.Command, args []string) error {
 		return errors.Wrapf(err, "reading config from file")
 	}
 
-	return opts.API.SetConfig(noInstanceID, config)
+	opts.update.Config = config
+	result, err := opts.API.SetConfig(noInstanceID, opts.update)
+	if err != nil {
+		return err
+	}
+	return outputResult(opts.update, result)
+}
+
+func outputResult(sent flux.ConfigUpdate, result flux.InstanceConfig) error {
+	if sent.GenerateKey {
+		if result.Git.PublicKey == "" {
+			return errors.New("Key generation requested, but no public key returned")
+		}
+		fmt.Println(result.Git.PublicKey)
+	}
+	return nil
 }

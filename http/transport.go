@@ -37,7 +37,8 @@ func NewRouter() *mux.Router {
 	r.NewRoute().Name("Unlock").Methods("POST").Path("/v3/unlock").Queries("service", "{service}")
 	r.NewRoute().Name("History").Methods("GET").Path("/v3/history").Queries("service", "{service}")
 	r.NewRoute().Name("GetConfig").Methods("GET").Path("/v4/config").Queries("secrets", "{secrets}")
-	r.NewRoute().Name("SetConfig").Methods("POST").Path("/v4/config")
+	r.NewRoute().Name("SetConfigV4").Methods("POST").Path("/v4/config")
+	r.NewRoute().Name("SetConfigV5").Methods("POST").Path("/v5/config")
 	r.NewRoute().Name("RegisterDaemon").Methods("GET").Path("/v4/daemon")
 	return r
 }
@@ -54,7 +55,8 @@ func NewHandler(s api.FluxService, r *mux.Router, logger log.Logger, h metrics.H
 		"Unlock":         handleUnlock,
 		"History":        handleHistory,
 		"GetConfig":      handleGetConfig,
-		"SetConfig":      handleSetConfig,
+		"SetConfigV4":    handleSetConfigV4,
+		"SetConfigV5":    handleSetConfigV5,
 		"RegisterDaemon": handleRegister,
 	} {
 		var handler http.Handler
@@ -565,7 +567,7 @@ func invokeGetConfig(client *http.Client, t flux.Token, router *mux.Router, endp
 	return res, nil
 }
 
-func handleSetConfig(s api.FluxService) http.Handler {
+func handleSetConfigV4(s api.FluxService) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		inst := getInstanceID(r)
 
@@ -576,7 +578,7 @@ func handleSetConfig(s api.FluxService) http.Handler {
 			return
 		}
 
-		if err := s.SetConfig(inst, config); err != nil {
+		if _, err := s.SetConfig(inst, flux.ConfigUpdate{Config: config}); err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
 			fmt.Fprintf(w, err.Error())
 			return
@@ -588,28 +590,65 @@ func handleSetConfig(s api.FluxService) http.Handler {
 	})
 }
 
-func invokeSetConfig(client *http.Client, t flux.Token, router *mux.Router, endpoint string, updates flux.InstanceConfig) error {
-	u, err := makeURL(endpoint, router, "SetConfig")
+func handleSetConfigV5(s api.FluxService) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		inst := getInstanceID(r)
+
+		var err error
+		var update flux.ConfigUpdate
+		if err = json.NewDecoder(r.Body).Decode(&update); err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			fmt.Fprintf(w, err.Error())
+			return
+		}
+
+		var result flux.InstanceConfig
+		if result, err = s.SetConfig(inst, update); err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			fmt.Fprintf(w, err.Error())
+			return
+		}
+
+		resultBytes := bytes.Buffer{}
+		if err = json.NewEncoder(&resultBytes).Encode(result); err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			fmt.Fprintf(w, err.Error())
+			return
+		}
+
+		w.WriteHeader(http.StatusOK)
+		w.Write(resultBytes.Bytes())
+		return
+	})
+}
+
+func invokeSetConfig(client *http.Client, t flux.Token, router *mux.Router, endpoint string, update flux.ConfigUpdate) (flux.InstanceConfig, error) {
+	u, err := makeURL(endpoint, router, "SetConfigV5")
 	if err != nil {
-		return errors.Wrap(err, "constructing URL")
+		return flux.InstanceConfig{}, errors.Wrap(err, "constructing URL")
 	}
 
-	var configBytes bytes.Buffer
-	if err = json.NewEncoder(&configBytes).Encode(updates); err != nil {
-		return errors.Wrap(err, "encoding config updates")
+	var requestBytes bytes.Buffer
+	if err = json.NewEncoder(&requestBytes).Encode(update); err != nil {
+		return flux.InstanceConfig{}, errors.Wrap(err, "encoding config updates")
 	}
 
-	req, err := http.NewRequest("POST", u.String(), &configBytes)
+	req, err := http.NewRequest("POST", u.String(), &requestBytes)
 	if err != nil {
-		return errors.Wrapf(err, "constructing request %s", u)
+		return flux.InstanceConfig{}, errors.Wrapf(err, "constructing request %s", u)
 	}
 	t.Set(req)
 
-	if _, err = executeRequest(client, req); err != nil {
-		return errors.Wrap(err, "executing HTTP request")
+	resp, err := executeRequest(client, req)
+	if err != nil {
+		return flux.InstanceConfig{}, errors.Wrap(err, "executing HTTP request")
 	}
 
-	return nil
+	var res flux.InstanceConfig
+	if err := json.NewDecoder(resp.Body).Decode(&res); err != nil {
+		return res, errors.Wrap(err, "decoding response body")
+	}
+	return res, nil
 }
 
 func handleRegister(s api.FluxService) http.Handler {
