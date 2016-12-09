@@ -126,7 +126,11 @@ func (c *Cluster) SomeServices(ids []flux.ServiceID) (res []platform.Service, er
 				return nil, errors.Wrapf(err, "finding service %s among services for namespace %s", name, ns)
 			}
 
-			res = append(res, c.makeService(ns, service, controllers))
+			svc[service.Name] = c.makeService(ns, service, controllers)
+
+			for _, svc := range svcs {
+				res = append(res, svc)
+			}
 		}
 	}
 	return res, nil
@@ -155,18 +159,74 @@ func (c *Cluster) AllServices(namespace string, ignore flux.ServiceIDSet) (res [
 			return nil, errors.Wrapf(err, "getting pod controllers for namespace %s", ns)
 		}
 
-		list, err := c.client.Services(ns).List(api.ListOptions{})
-		if err != nil {
-			return nil, errors.Wrapf(err, "getting services for namespace %s", ns)
+		svcs := map[string]platform.Service{}
+
+		{
+			list, err := c.client.DaemonSets(ns).List(api.ListOptions{})
+			if err != nil {
+				return nil, errors.Wrapf(err, "getting services for namespace %s", ns)
+			}
+
+			for _, daemonset := range list.Items {
+				if !ignore.Contains(flux.MakeServiceID(ns, daemonset.Name)) {
+					svcs[daemonset.Name] = c.makeDaemonSet(ns, &daemonset, controllers)
+				}
+			}
 		}
 
-		for _, service := range list.Items {
-			if !ignore.Contains(flux.MakeServiceID(ns, service.Name)) {
-				res = append(res, c.makeService(ns, &service, controllers))
+		{
+			list, err := c.client.Deployments(ns).List(api.ListOptions{})
+			if err != nil {
+				return nil, errors.Wrapf(err, "getting services for namespace %s", ns)
 			}
+
+			for _, deployment := range list.Items {
+				if !ignore.Contains(flux.MakeServiceID(ns, deployment.Name)) {
+					svcs[deployment.Name] = c.makeDeployment(ns, &deployment, controllers)
+				}
+			}
+		}
+
+		{
+			list, err := c.client.Services(ns).List(api.ListOptions{})
+			if err != nil {
+				return nil, errors.Wrapf(err, "getting services for namespace %s", ns)
+			}
+
+			for _, service := range list.Items {
+				if !ignore.Contains(flux.MakeServiceID(ns, service.Name)) {
+					svcs[service.Name] = c.makeService(ns, &service, controllers)
+				}
+			}
+		}
+
+		for _, svc := range svcs {
+			res = append(res, svc)
 		}
 	}
 	return res, nil
+}
+
+func (c *Cluster) makeDaemonSet(ns string, ds *apiext.DaemonSet, controllers []podController) platform.Service {
+	id := flux.MakeServiceID(ns, ds.Name)
+	status, _ := c.status.getRegradeProgress(id)
+	return platform.Service{
+		ID:         id,
+		Metadata:   metadata(ds.TypeMeta, ds.ObjectMeta),
+		Containers: containersOrExcuse(ds.Spec.Selector, controllers),
+		Status:     status,
+	}
+}
+
+func (c *Cluster) makeDeployment(ns string, deployment *apiext.Deployment, controllers []podController) platform.Service {
+	id := flux.MakeServiceID(ns, deployment.Name)
+	status, _ := c.status.getRegradeProgress(id)
+	return platform.Service{
+		ID:         id,
+		Metadata:   metadata(deployment.TypeMeta, deployment.ObjectMeta),
+		Containers: containersOrExcuse(deployment.Spec.Selector, controllers),
+		Status:     status,
+	}
 }
 
 func (c *Cluster) makeService(ns string, service *api.Service, controllers []podController) platform.Service {
@@ -176,18 +236,24 @@ func (c *Cluster) makeService(ns string, service *api.Service, controllers []pod
 		ID:         id,
 		IP:         service.Spec.ClusterIP,
 		Metadata:   metadataForService(service),
-		Containers: containersOrExcuse(service, controllers),
+		Containers: containersOrExcuse(service.Spec.Selector, controllers),
 		Status:     status,
 	}
 }
 
-func metadataForService(s *api.Service) map[string]string {
+func metadata(t api.TypeMeta, o api.ObjectMeta) map[string]string {
 	return map[string]string{
-		"created_at":       s.CreationTimestamp.String(),
-		"resource_version": s.ResourceVersion,
-		"uid":              string(s.UID),
-		"type":             string(s.Spec.Type),
+		"created_at":       o.CreationTimestamp.String(),
+		"resource_version": o.ResourceVersion,
+		"uid":              string(o.UID),
+		"type":             string(t.Kind),
 	}
+}
+
+func metadataForService(s *api.Service) map[string]string {
+	m := metadata(s.TypeMeta, s.ObjectMeta)
+	m["type"] = string(s.Spec.Type)
+	return m
 }
 
 func (c *Cluster) podControllersInNamespace(namespace string) (res []podController, err error) {
@@ -211,8 +277,7 @@ func (c *Cluster) podControllersInNamespace(namespace string) (res []podControll
 }
 
 // Find the pod controller (deployment or replication controller) that matches the service
-func matchController(service *api.Service, controllers []podController) (podController, error) {
-	selector := service.Spec.Selector
+func matchController(selector labels.Selector, controllers []podController) (podController, error) {
 	if len(selector) == 0 {
 		return podController{}, platform.ErrEmptySelector
 	}
@@ -233,18 +298,20 @@ func matchController(service *api.Service, controllers []podController) (podCont
 	}
 }
 
-func containersOrExcuse(service *api.Service, controllers []podController) platform.ContainersOrExcuse {
-	pc, err := matchController(service, controllers)
+func containersOrExcuse(selectorLabels map[string]string, controllers []podController) platform.ContainersOrExcuse {
+	selector := labels.SelectorFromSet(labels.Set(selectorLabels))
+	pc, err := matchController(selector, controllers)
 	if err != nil {
 		return platform.ContainersOrExcuse{Excuse: err.Error()}
 	}
 	return platform.ContainersOrExcuse{Containers: pc.templateContainers()}
 }
 
-// Either a replication controller, a deployment, or neither (both nils).
+// Either a replication controller, a daemonSet, or a deployment, or none (all nils).
 type podController struct {
 	ReplicationController *api.ReplicationController
 	Deployment            *apiext.Deployment
+	DaemonSet             *apiext.DaemonSet
 }
 
 func (p podController) name() string {
@@ -252,6 +319,8 @@ func (p podController) name() string {
 		return p.Deployment.Name
 	} else if p.ReplicationController != nil {
 		return p.ReplicationController.Name
+	} else if p.DaemonSet != nil {
+		return p.DaemonSet.Name
 	}
 	return ""
 }
@@ -261,6 +330,8 @@ func (p podController) kind() string {
 		return "Deployment"
 	} else if p.ReplicationController != nil {
 		return "ReplicationController"
+	} else if p.DaemonSet != nil {
+		return "DaemonSet"
 	}
 	return "unknown"
 }
@@ -271,6 +342,8 @@ func (p podController) templateContainers() (res []platform.Container) {
 		apiContainers = p.Deployment.Spec.Template.Spec.Containers
 	} else if p.ReplicationController != nil {
 		apiContainers = p.ReplicationController.Spec.Template.Spec.Containers
+	} else if p.DaemonSet != nil {
+		apiContainers = p.DaemonSet.Spec.Template.Spec.Containers
 	}
 
 	for _, c := range apiContainers {
@@ -279,26 +352,19 @@ func (p podController) templateContainers() (res []platform.Container) {
 	return res
 }
 
-func (p podController) templateLabels() map[string]string {
+func (p podController) templateLabels() labels.Set {
 	if p.Deployment != nil {
-		return p.Deployment.Spec.Template.Labels
+		return labels.Set(p.Deployment.Spec.Template.Labels)
 	} else if p.ReplicationController != nil {
-		return p.ReplicationController.Spec.Template.Labels
+		return labels.Set(p.ReplicationController.Spec.Template.Labels)
+	} else if p.DaemonSet != nil {
+		return labels.Set(p.DaemonSet.Spec.Template.Labels)
 	}
 	return nil
 }
 
-func (p podController) matchedBy(selector map[string]string) bool {
-	// For each key=value pair in the service spec, check if the RC
-	// annotates its pods in the same way. If any rule fails, the RC is
-	// not a match. If all rules pass, the RC is a match.
-	labels := p.templateLabels()
-	for k, v := range selector {
-		if labels[k] != v {
-			return false
-		}
-	}
-	return true
+func (p podController) matchedBy(selector labels.Selector) bool {
+	return selector.Matches(p.templateLabels())
 }
 
 // Regrade performs service regrades as specified by the RegradeSpecs. If all
@@ -347,7 +413,8 @@ func (c *Cluster) Regrade(specs []platform.RegradeSpec) error {
 					continue
 				}
 
-				controller, err := matchController(service, controllers)
+				selector := labels.SelectorFromSet(labels.Set(service.Spec.Selector))
+				controller, err := matchController(selector, controllers)
 				if err != nil {
 					regradeErr[spec.ServiceID] = errors.Wrap(err, "getting pod controller")
 					continue
