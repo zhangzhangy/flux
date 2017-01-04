@@ -222,15 +222,6 @@ func (s *DatabaseStore) NextJob(queues []string) (Job, error) {
 			-- Don't make jobs available until after they are scheduled
 			AND scheduled_at <= $1
 
-			-- Only one job at a time per instance
-			AND instance_id NOT IN (
-				SELECT instance_id
-				FROM jobs
-				WHERE claimed_at IS NOT NULL
-				AND finished_at IS NULL
-				GROUP BY instance_id
-			)
-
 			-- subtraction is to work around for ql, not being able to sort
 			-- multiple columns in different ways.
 			ORDER BY (-1 * priority), scheduled_at, submitted_at
