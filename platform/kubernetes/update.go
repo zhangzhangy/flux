@@ -10,7 +10,7 @@ import (
 	"github.com/weaveworks/flux"
 )
 
-// UpdatePodController takes the body of a ReplicationController or Deployment
+// UpdateDefinition takes the body of a ReplicationController or Deployment
 // resource definition (specified in YAML) and the name of the new image that
 // should be put in the definition (in the format "repo.org/group/name:tag"). It
 // returns a new resource definition body where all references to the old image
@@ -18,7 +18,7 @@ import (
 //
 // This function has many additional requirements that are likely in flux. Read
 // the source to learn about them.
-func UpdatePodController(def []byte, newImageName string, trace io.Writer) ([]byte, error) {
+func UpdateDefinition(def []byte, newImageName string, trace io.Writer) ([]byte, error) {
 	var buf bytes.Buffer
 	err := tryUpdate(string(def), newImageName, trace, &buf)
 	return buf.Bytes(), err

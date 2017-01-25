@@ -16,7 +16,7 @@ import (
 	"github.com/weaveworks/flux/platform"
 )
 
-func (c podController) newApply(newDefinition *apiObject) (*apply, error) {
+func (c definition) newApply(newDefinition *apiObject) (*apply, error) {
 	k := c.kind()
 	if newDefinition.Kind != k {
 		return nil, fmt.Errorf(`Expected new definition of kind %q, to match old definition; got %q`, k, newDefinition.Kind)

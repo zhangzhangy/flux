@@ -118,9 +118,9 @@ func (c *Cluster) SomeServices(ids []flux.ServiceID) (res []platform.Service, er
 
 	for ns, names := range namespacedServices {
 		services := c.client.Services(ns)
-		controllers, err := c.podControllersInNamespace(ns)
+		definitions, err := c.definitionsInNamespace(ns)
 		if err != nil {
-			return nil, errors.Wrapf(err, "finding pod controllers for namespace %s", ns)
+			return nil, errors.Wrapf(err, "finding definitions for namespace %s", ns)
 		}
 		for _, name := range names {
 			service, err := services.Get(name)
@@ -128,7 +128,7 @@ func (c *Cluster) SomeServices(ids []flux.ServiceID) (res []platform.Service, er
 				return nil, errors.Wrapf(err, "finding service %s among services for namespace %s", name, ns)
 			}
 
-			res = append(res, c.makeService(ns, service, controllers))
+			res = append(res, c.makeService(ns, service, definitions))
 		}
 	}
 	return res, nil
@@ -152,9 +152,9 @@ func (c *Cluster) AllServices(namespace string, ignore flux.ServiceIDSet) (res [
 	}
 
 	for _, ns := range namespaces {
-		controllers, err := c.podControllersInNamespace(ns)
+		definitions, err := c.definitionsInNamespace(ns)
 		if err != nil {
-			return nil, errors.Wrapf(err, "getting pod controllers for namespace %s", ns)
+			return nil, errors.Wrapf(err, "getting definitions for namespace %s", ns)
 		}
 
 		list, err := c.client.Services(ns).List(api.ListOptions{})
@@ -164,21 +164,21 @@ func (c *Cluster) AllServices(namespace string, ignore flux.ServiceIDSet) (res [
 
 		for _, service := range list.Items {
 			if !ignore.Contains(flux.MakeServiceID(ns, service.Name)) {
-				res = append(res, c.makeService(ns, &service, controllers))
+				res = append(res, c.makeService(ns, &service, definitions))
 			}
 		}
 	}
 	return res, nil
 }
 
-func (c *Cluster) makeService(ns string, service *api.Service, controllers []podController) platform.Service {
+func (c *Cluster) makeService(ns string, service *api.Service, definitions []definition) platform.Service {
 	id := flux.MakeServiceID(ns, service.Name)
 	status, _ := c.status.getApplyProgress(id)
 	return platform.Service{
 		ID:         id,
 		IP:         service.Spec.ClusterIP,
 		Metadata:   metadataForService(service),
-		Containers: containersOrExcuse(service, controllers),
+		Containers: containersOrExcuse(service, definitions),
 		Status:     status,
 	}
 }
@@ -192,35 +192,35 @@ func metadataForService(s *api.Service) map[string]string {
 	}
 }
 
-func (c *Cluster) podControllersInNamespace(namespace string) (res []podController, err error) {
+func (c *Cluster) definitionsInNamespace(namespace string) (res []definition, err error) {
 	deploylist, err := c.client.Deployments(namespace).List(api.ListOptions{})
 	if err != nil {
 		return nil, errors.Wrap(err, "collecting deployments")
 	}
 	for i := range deploylist.Items {
-		res = append(res, podController{Deployment: &deploylist.Items[i]})
+		res = append(res, definition{Deployment: &deploylist.Items[i]})
 	}
 
 	rclist, err := c.client.ReplicationControllers(namespace).List(api.ListOptions{})
 	if err != nil {
-		return nil, errors.Wrap(err, "collecting replication controllers")
+		return nil, errors.Wrap(err, "collecting replication definitions")
 	}
 	for i := range rclist.Items {
-		res = append(res, podController{ReplicationController: &rclist.Items[i]})
+		res = append(res, definition{ReplicationController: &rclist.Items[i]})
 	}
 
 	return res, nil
 }
 
-// Find the pod controller (deployment or replication controller) that matches the service
-func matchController(service *api.Service, controllers []podController) (podController, error) {
+// Find the definition (deployment or replication controller) that matches the service
+func matchDefinition(service *api.Service, definitions []definition) (definition, error) {
 	selector := service.Spec.Selector
 	if len(selector) == 0 {
-		return podController{}, platform.ErrEmptySelector
+		return definition{}, platform.ErrEmptySelector
 	}
 
-	var matching []podController
-	for _, c := range controllers {
+	var matching []definition
+	for _, c := range definitions {
 		if c.matchedBy(selector) {
 			matching = append(matching, c)
 		}
@@ -229,27 +229,27 @@ func matchController(service *api.Service, controllers []podController) (podCont
 	case 1:
 		return matching[0], nil
 	case 0:
-		return podController{}, platform.ErrNoMatching
+		return definition{}, platform.ErrNoMatching
 	default:
-		return podController{}, platform.ErrMultipleMatching
+		return definition{}, platform.ErrMultipleMatching
 	}
 }
 
-func containersOrExcuse(service *api.Service, controllers []podController) platform.ContainersOrExcuse {
-	pc, err := matchController(service, controllers)
+func containersOrExcuse(service *api.Service, definitions []definition) platform.ContainersOrExcuse {
+	pc, err := matchDefinition(service, definitions)
 	if err != nil {
 		return platform.ContainersOrExcuse{Excuse: err.Error()}
 	}
 	return platform.ContainersOrExcuse{Containers: pc.templateContainers()}
 }
 
-// Either a replication controller, a deployment, or neither (both nils).
-type podController struct {
+// Either a replication definition, a deployment, or neither (both nils).
+type definition struct {
 	ReplicationController *api.ReplicationController
 	Deployment            *apiext.Deployment
 }
 
-func (p podController) name() string {
+func (p definition) name() string {
 	if p.Deployment != nil {
 		return p.Deployment.Name
 	} else if p.ReplicationController != nil {
@@ -258,7 +258,7 @@ func (p podController) name() string {
 	return ""
 }
 
-func (p podController) kind() string {
+func (p definition) kind() string {
 	if p.Deployment != nil {
 		return "Deployment"
 	} else if p.ReplicationController != nil {
@@ -267,7 +267,7 @@ func (p podController) kind() string {
 	return "unknown"
 }
 
-func (p podController) templateContainers() (res []platform.Container) {
+func (p definition) templateContainers() (res []platform.Container) {
 	var apiContainers []api.Container
 	if p.Deployment != nil {
 		apiContainers = p.Deployment.Spec.Template.Spec.Containers
@@ -281,7 +281,7 @@ func (p podController) templateContainers() (res []platform.Container) {
 	return res
 }
 
-func (p podController) templateLabels() map[string]string {
+func (p definition) templateLabels() map[string]string {
 	if p.Deployment != nil {
 		return p.Deployment.Spec.Template.Labels
 	} else if p.ReplicationController != nil {
@@ -290,7 +290,7 @@ func (p podController) templateLabels() map[string]string {
 	return nil
 }
 
-func (p podController) matchedBy(selector map[string]string) bool {
+func (p definition) matchedBy(selector map[string]string) bool {
 	// For each key=value pair in the service spec, check if the RC
 	// annotates its pods in the same way. If any rule fails, the RC is
 	// not a match. If all rules pass, the RC is a match.
@@ -326,9 +326,9 @@ func (c *Cluster) Apply(defs []platform.ServiceDefinition) error {
 		for namespace, defs := range namespacedDefs {
 			services := c.client.Services(namespace)
 
-			controllers, err := c.podControllersInNamespace(namespace)
+			definitions, err := c.definitionsInNamespace(namespace)
 			if err != nil {
-				err = errors.Wrapf(err, "getting pod controllers for namespace %s", namespace)
+				err = errors.Wrapf(err, "getting definitions for namespace %s", namespace)
 				for _, def := range defs {
 					applyErr[def.ServiceID] = err
 				}
@@ -349,13 +349,13 @@ func (c *Cluster) Apply(defs []platform.ServiceDefinition) error {
 					continue
 				}
 
-				controller, err := matchController(service, controllers)
+				definition, err := matchDefinition(service, definitions)
 				if err != nil {
-					applyErr[def.ServiceID] = errors.Wrap(err, "getting pod controller")
+					applyErr[def.ServiceID] = errors.Wrap(err, "getting definition")
 					continue
 				}
 
-				plan, err := controller.newApply(newDef)
+				plan, err := definition.newApply(newDef)
 				if err != nil {
 					applyErr[def.ServiceID] = errors.Wrap(err, "creating release")
 					continue

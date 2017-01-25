@@ -181,7 +181,7 @@ func (r *Releaser) releaseImages(method, msg string, inst *instance.Instance, ge
 
 	res = append(res, r.releaseActionClone())
 	for service, applies := range updateMap {
-		res = append(res, r.releaseActionUpdatePodController(service, applies))
+		res = append(res, r.releaseActionUpdateDefinition(service, applies))
 	}
 	res = append(res, r.releaseActionCommitAndPush(msg))
 	var servicesToApply []flux.ServiceID
@@ -222,7 +222,7 @@ func (r *Releaser) releaseWithoutUpdate(method, msg string, inst *instance.Insta
 
 	ids := []flux.ServiceID{}
 	for _, service := range services {
-		res = append(res, r.releaseActionFindPodController(service.ID))
+		res = append(res, r.releaseActionFindDefinition(service.ID))
 		ids = append(ids, service.ID)
 	}
 	res = append(res, r.releaseActionReleaseServices(ids, msg))
@@ -327,9 +327,9 @@ func (r *Releaser) releaseActionClone() ReleaseAction {
 	}
 }
 
-func (r *Releaser) releaseActionFindPodController(service flux.ServiceID) ReleaseAction {
+func (r *Releaser) releaseActionFindDefinition(service flux.ServiceID) ReleaseAction {
 	return ReleaseAction{
-		Name:        "find_pod_controller",
+		Name:        "find_definition",
 		Description: fmt.Sprintf("Load the resource definition file for service %s", service),
 		Do: func(rc *ReleaseContext) (res string, err error) {
 			resourcePath := rc.RepoPath()
@@ -354,13 +354,13 @@ func (r *Releaser) releaseActionFindPodController(service flux.ServiceID) Releas
 			if err != nil {
 				return "", err
 			}
-			rc.PodControllers[service] = def
-			return "Found pod controller OK.", nil
+			rc.Definitions[service] = def
+			return "Found definition OK.", nil
 		},
 	}
 }
 
-func (r *Releaser) releaseActionUpdatePodController(service flux.ServiceID, updates []ContainerUpdate) ReleaseAction {
+func (r *Releaser) releaseActionUpdateDefinition(service flux.ServiceID, updates []ContainerUpdate) ReleaseAction {
 	var actions []string
 	for _, update := range updates {
 		actions = append(actions, fmt.Sprintf("%s (%s -> %s)", update.Container, update.Current, update.Target))
@@ -368,7 +368,7 @@ func (r *Releaser) releaseActionUpdatePodController(service flux.ServiceID, upda
 	actionList := strings.Join(actions, ", ")
 
 	return ReleaseAction{
-		Name:        "update_pod_controller",
+		Name:        "update_definition",
 		Description: fmt.Sprintf("Update %d images(s) in the resource definition file for %s: %s.", len(updates), service, actionList),
 		Do: func(rc *ReleaseContext) (res string, err error) {
 			resourcePath := rc.RepoPath()
@@ -398,17 +398,17 @@ func (r *Releaser) releaseActionUpdatePodController(service flux.ServiceID, upda
 			}
 
 			for _, update := range updates {
-				// Note 1: UpdatePodController parses the target (new) image
+				// Note 1: UpdateDefinition parses the target (new) image
 				// name, extracts the repository, and only mutates the line(s)
 				// in the definition that match it. So for the time being we
-				// ignore the current image. UpdatePodController could be
+				// ignore the current image. UpdateDefinition could be
 				// updated, if necessary.
 				//
 				// Note 2: we keep overwriting the same def, to handle multiple
 				// images in a single file.
-				def, err = kubernetes.UpdatePodController(def, string(update.Target), ioutil.Discard)
+				def, err = kubernetes.UpdateDefinition(def, string(update.Target), ioutil.Discard)
 				if err != nil {
-					return "", errors.Wrapf(err, "updating pod controller for %s", update.Target)
+					return "", errors.Wrapf(err, "updating definition for %s", update.Target)
 				}
 			}
 
@@ -418,8 +418,8 @@ func (r *Releaser) releaseActionUpdatePodController(service flux.ServiceID, upda
 			}
 
 			// Put the def in the map, so release works.
-			rc.PodControllers[service] = def
-			return "Update pod controller OK.", nil
+			rc.Definitions[service] = def
+			return "Update definition OK.", nil
 		},
 	}
 }
@@ -467,7 +467,7 @@ func (r *Releaser) releaseActionReleaseServices(services []flux.ServiceID, msg s
 			var asyncDefs []platform.ServiceDefinition
 
 			for _, service := range services {
-				def, ok := rc.PodControllers[service]
+				def, ok := rc.Definitions[service]
 				if !ok {
 					results[service] = errors.New("no definition found; skipping release")
 					continue

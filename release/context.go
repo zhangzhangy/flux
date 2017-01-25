@@ -9,15 +9,15 @@ import (
 )
 
 type ReleaseContext struct {
-	Instance       *instance.Instance
-	WorkingDir     string
-	PodControllers map[flux.ServiceID][]byte
+	Instance    *instance.Instance
+	WorkingDir  string
+	Definitions map[flux.ServiceID][]byte
 }
 
 func NewReleaseContext(inst *instance.Instance) *ReleaseContext {
 	return &ReleaseContext{
-		Instance:       inst,
-		PodControllers: map[flux.ServiceID][]byte{},
+		Instance:    inst,
+		Definitions: map[flux.ServiceID][]byte{},
 	}
 }
 
