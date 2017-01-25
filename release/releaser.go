@@ -23,6 +23,12 @@ import (
 const FluxServiceName = "fluxsvc"
 const FluxDaemonName = "fluxd"
 
+var (
+	// ErrNoop is used to break out of a release early, if there is nothing to
+	// do.
+	ErrNoop = fmt.Errorf("Nothing to do.")
+)
+
 type Releaser struct {
 	instancer instance.Instancer
 	metrics   Metrics
@@ -82,8 +88,6 @@ func (r *Releaser) Handle(job *jobs.Job, updater jobs.JobUpdater) (followUps []j
 		updater.UpdateJob(*job)
 	}
 
-	updateJob("Calculating release actions.")
-
 	var actions []ReleaseAction
 	releaseType, actions, err = r.plan(inst, params)
 	if err != nil {
@@ -133,100 +137,27 @@ func (r *Releaser) plan(inst *instance.Instance, params jobs.ReleaseJobParams) (
 }
 
 func (r *Releaser) releaseImages(method, msg string, inst *instance.Instance, getServices ServiceSelector, getImages ImageSelector) ([]ReleaseAction, error) {
-	var res []ReleaseAction
-	res = append(res, r.releaseActionPrintf(msg))
-
-	var (
-		base  = r.metrics.StageDuration.With("method", method)
-		stage *metrics.Timer
-	)
-
-	defer func() { stage.ObserveDuration() }()
-	stage = metrics.NewTimer(base.With("stage", "fetch_platform_services"))
-
-	services, err := getServices.SelectServices(inst)
-	if err != nil {
-		return nil, errors.Wrap(err, "fetching platform services")
-	}
-	if len(services) == 0 {
-		res = append(res, r.releaseActionPrintf("No selected services found. Nothing to do."))
-		return res, nil
-	}
-
-	stage.ObserveDuration()
-	stage = metrics.NewTimer(base.With("stage", "calculate_applies"))
-
-	// Each service is running multiple images.
-	// Each image may need to be upgraded, and trigger an apply.
-	images, err := getImages.SelectImages(inst, services)
-	if err != nil {
-		return nil, errors.Wrap(err, "collecting available images to calculate applies")
-	}
-
-	updateMap := CalculateUpdates(services, images, func(format string, args ...interface{}) {
-		res = append(res, r.releaseActionPrintf(format, args...))
-	})
-
-	if len(updateMap) <= 0 {
-		res = append(res, r.releaseActionPrintf("All selected services are running the requested images. Nothing to do."))
-		return res, nil
-	}
-
-	stage.ObserveDuration()
-	stage = metrics.NewTimer(base.With("stage", "finalize"))
-
-	// We have identified at least 1 release that needs to occur. Releasing
-	// means cloning the repo, changing the resource file(s), committing and
-	// pushing, and then making the release(s) to the platform.
-
-	res = append(res, r.releaseActionClone())
-	for service, applies := range updateMap {
-		res = append(res, r.releaseActionUpdateDefinition(service, applies))
-	}
-	res = append(res, r.releaseActionCommitAndPush(msg))
-	var servicesToApply []flux.ServiceID
-	for service := range updateMap {
-		servicesToApply = append(servicesToApply, service)
-	}
-	res = append(res, r.releaseActionReleaseServices(servicesToApply, msg))
-
-	return res, nil
+	return []ReleaseAction{
+		r.releaseActionPrintf(msg),
+		r.releaseActionClone(),
+		r.releaseActionFetchPlatformServices(getServices),
+		r.releaseActionCheckForNewImages(getImages),
+		r.releaseActionFindDefinitions(getServices),
+		r.releaseActionUpdateDefinitions(getImages),
+		r.releaseActionCommitAndPush(msg),
+		r.releaseActionApplyToPlatform(msg),
+	}, nil
 }
 
 // Release whatever is in the cloned configuration, without changing anything
 func (r *Releaser) releaseWithoutUpdate(method, msg string, inst *instance.Instance, getServices ServiceSelector) ([]ReleaseAction, error) {
-	var res []ReleaseAction
-
-	var (
-		base  = r.metrics.StageDuration.With("method", method)
-		stage *metrics.Timer
-	)
-
-	defer func() { stage.ObserveDuration() }()
-	stage = metrics.NewTimer(base.With("stage", "fetch_platform_services"))
-
-	services, err := getServices.SelectServices(inst)
-	if err != nil {
-		return nil, errors.Wrap(err, "fetching platform services")
-	}
-	if len(services) == 0 {
-		res = append(res, r.releaseActionPrintf("No selected services found. Nothing to do."))
-		return res, nil
-	}
-
-	stage.ObserveDuration()
-	stage = metrics.NewTimer(base.With("stage", "finalize"))
-
-	res = append(res, r.releaseActionPrintf(msg))
-	res = append(res, r.releaseActionClone())
-
-	ids := []flux.ServiceID{}
-	for _, service := range services {
-		res = append(res, r.releaseActionFindDefinition(service.ID))
-		ids = append(ids, service.ID)
-	}
-	res = append(res, r.releaseActionReleaseServices(ids, msg))
-	return res, nil
+	return []ReleaseAction{
+		r.releaseActionPrintf(msg),
+		r.releaseActionClone(),
+		r.releaseActionFetchPlatformServices(getServices),
+		r.releaseActionFindDefinitions(getServices),
+		r.releaseActionApplyToPlatform(msg),
+	}, nil
 }
 
 func (r *Releaser) execute(inst *instance.Instance, actions []ReleaseAction, kind flux.ReleaseKind, updateJob func(string, ...interface{})) error {
@@ -248,15 +179,22 @@ func (r *Releaser) execute(inst *instance.Instance, actions []ReleaseAction, kin
 				fluxmetrics.LabelSuccess, fmt.Sprint(err == nil),
 			).Observe(time.Since(begin).Seconds())
 			if err != nil {
-				updateJob(err.Error())
-				inst.Log("err", err)
-				actions[i].Result = "Failed: " + err.Error()
-				return err
+				result = strings.Join([]string{result, err.Error()}, " ")
+				if err != ErrNoop {
+					inst.Log("err", err)
+					result = "Failed: " + result
+				}
 			}
 			if result != "" {
 				updateJob(result)
+				actions[i].Result = result
 			}
-			actions[i].Result = result
+			if err == ErrNoop {
+				break // Release is a noop, let's get outta here!
+			}
+			if err != nil {
+				return err // Something went wrong, abort the release
+			}
 		}
 	}
 
@@ -313,113 +251,120 @@ func (r *Releaser) releaseActionPrintf(format string, args ...interface{}) Relea
 	}
 }
 
+func (r *Releaser) releaseActionFetchPlatformServices(getServices ServiceSelector) ReleaseAction {
+	return ReleaseAction{
+		Name:        "fetch_platform_services",
+		Description: fmt.Sprintf("Fetch %s from the platform", getServices),
+		Do: func(rc *ReleaseContext) (res string, err error) {
+			rc.Services, err = getServices.SelectServices(rc.Instance)
+			if err != nil {
+				return "", errors.Wrap(err, "fetching platform services")
+			}
+			if len(rc.Services) == 0 {
+				return "No selected services found.", ErrNoop
+			}
+			return fmt.Sprintf("Found %d selected services.", len(rc.Services)), nil
+		},
+	}
+}
+
 func (r *Releaser) releaseActionClone() ReleaseAction {
 	return ReleaseAction{
 		Name:        "clone",
 		Description: "Clone the config repo.",
 		Do: func(rc *ReleaseContext) (res string, err error) {
-			err = rc.CloneRepo()
+			stderr, err := rc.CloneRepo()
 			if err != nil {
-				return "", errors.Wrap(err, "clone the config repo")
+				return stderr, errors.Wrap(err, "clone the config repo")
 			}
-			return "Clone OK.", nil
+			return fmt.Sprintf("Cloned %s", rc.RepoURL()), nil
 		},
 	}
 }
 
-func (r *Releaser) releaseActionFindDefinition(service flux.ServiceID) ReleaseAction {
+func (r *Releaser) releaseActionFindDefinitions(services ServiceSelector) ReleaseAction {
 	return ReleaseAction{
-		Name:        "find_definition",
-		Description: fmt.Sprintf("Load the resource definition file for service %s", service),
+		Name:        "find_definitions",
+		Description: fmt.Sprintf("Find definition files for %s", services),
 		Do: func(rc *ReleaseContext) (res string, err error) {
-			resourcePath := rc.RepoPath()
-			if fi, err := os.Stat(resourcePath); err != nil || !fi.IsDir() {
-				return "", fmt.Errorf("the resource path (%s) is not valid", resourcePath)
-			}
-
-			namespace, serviceName := service.Components()
-			files, err := kubernetes.FilesFor(resourcePath, namespace, serviceName)
-
-			if err != nil {
-				return "", errors.Wrapf(err, "finding resource definition file for %s", service)
-			}
-			if len(files) <= 0 { // fine; we'll just skip it
-				return fmt.Sprintf("no resource definition file found for %s; skipping", service), nil
-			}
-			if len(files) > 1 {
-				return "", fmt.Errorf("multiple resource definition files found for %s: %s", service, strings.Join(files, ", "))
-			}
-
-			def, err := ioutil.ReadFile(files[0]) // TODO(mb) not multi-doc safe
-			if err != nil {
-				return "", err
-			}
-			rc.Definitions[service] = def
-			return "Found definition OK.", nil
-		},
-	}
-}
-
-func (r *Releaser) releaseActionUpdateDefinition(service flux.ServiceID, updates []ContainerUpdate) ReleaseAction {
-	var actions []string
-	for _, update := range updates {
-		actions = append(actions, fmt.Sprintf("%s (%s -> %s)", update.Container, update.Current, update.Target))
-	}
-	actionList := strings.Join(actions, ", ")
-
-	return ReleaseAction{
-		Name:        "update_definition",
-		Description: fmt.Sprintf("Update %d images(s) in the resource definition file for %s: %s.", len(updates), service, actionList),
-		Do: func(rc *ReleaseContext) (res string, err error) {
-			resourcePath := rc.RepoPath()
-			if fi, err := os.Stat(resourcePath); err != nil || !fi.IsDir() {
-				return "", fmt.Errorf("the resource path (%s) is not valid", resourcePath)
-			}
-
-			namespace, serviceName := service.Components()
-			files, err := kubernetes.FilesFor(resourcePath, namespace, serviceName)
-			if err != nil {
-				return "", errors.Wrapf(err, "finding resource definition file for %s", service)
-			}
-			if len(files) <= 0 {
-				return fmt.Sprintf("no resource definition file found for %s; skipping", service), nil
-			}
-			if len(files) > 1 {
-				return "", fmt.Errorf("multiple resource definition files found for %s: %s", service, strings.Join(files, ", "))
-			}
-
-			def, err := ioutil.ReadFile(files[0])
-			if err != nil {
-				return "", err
-			}
-			fi, err := os.Stat(files[0])
+			var skipped []flux.ServiceID
+			rc.Definitions, skipped, err = services.SelectDefinitions(rc.RepoPath())
 			if err != nil {
 				return "", err
 			}
 
-			for _, update := range updates {
-				// Note 1: UpdateDefinition parses the target (new) image
-				// name, extracts the repository, and only mutates the line(s)
-				// in the definition that match it. So for the time being we
-				// ignore the current image. UpdateDefinition could be
-				// updated, if necessary.
-				//
-				// Note 2: we keep overwriting the same def, to handle multiple
-				// images in a single file.
-				def, err = kubernetes.UpdateDefinition(def, string(update.Target), ioutil.Discard)
-				if err != nil {
-					return "", errors.Wrapf(err, "updating definition for %s", update.Target)
+			if len(rc.Definitions) <= 0 {
+				return "No definition files found.", ErrNoop
+			}
+
+			var status []string
+			if len(skipped) > 0 {
+				for _, service := range skipped {
+					status = append(status, fmt.Sprintf("No definition file found for %s; skipping", service))
 				}
 			}
+			status = append(status, fmt.Sprintf("Found %d definition files.", len(rc.Definitions)))
+			return strings.Join(status, "\n"), nil
+		},
+	}
+}
 
-			// Write the file back, so commit/push works.
-			if err := ioutil.WriteFile(files[0], def, fi.Mode()); err != nil {
+func (r *Releaser) releaseActionCheckForNewImages(images ImageSelector) ReleaseAction {
+	return ReleaseAction{
+		Name:        "check_for_new_images",
+		Description: fmt.Sprintf("Check registry for %s", images),
+		Do: func(rc *ReleaseContext) (res string, err error) {
+			// Fetch the image metadata
+			rc.Images, err = images.SelectImages(rc.Instance, rc.Services)
+			if err != nil {
 				return "", err
 			}
+			return fmt.Sprintf("Found %d new images", len(rc.Images)), nil
+		},
+	}
+}
 
-			// Put the def in the map, so release works.
-			rc.Definitions[service] = def
-			return "Update definition OK.", nil
+func (r *Releaser) releaseActionUpdateDefinitions(images ImageSelector) ReleaseAction {
+	return ReleaseAction{
+		Name:        "update_definition",
+		Description: fmt.Sprintf("Update definition files to %s", images),
+		Do: func(rc *ReleaseContext) (res string, err error) {
+			updateMap := CalculateUpdates(rc.Services, rc.Images, func(format string, args ...interface{}) {})
+			if len(updateMap) <= 0 {
+				return "All selected services are running the requested images.", ErrNoop
+			}
+
+			definitionCount := 0
+			for service, updates := range updateMap {
+				// Update all definition files for this service. (should only be one)
+				for path, definition := range rc.Definitions[service] {
+					// We keep overwriting the same def, to handle multiple
+					// images in a single file.
+					updatedDefinition := definition
+					for _, update := range updates {
+						// Note 1: UpdateDefinition parses the target (new) image
+						// name, extracts the repository, and only mutates the line(s)
+						// in the definition that match it. So for the time being we
+						// ignore the current image. UpdateDefinition could be
+						// updated, if necessary.
+						//
+						// Note 2: we keep overwriting the same def, to handle multiple
+						// images in a single file.
+						updatedDefinition, err = kubernetes.UpdateDefinition(updatedDefinition, string(update.Target), ioutil.Discard)
+						if err != nil {
+							return "", errors.Wrapf(err, "updating definition for %s", service)
+						}
+					}
+					if string(definition) != string(updatedDefinition) {
+						if _, ok := rc.UpdatedDefinitions[service]; !ok {
+							rc.UpdatedDefinitions[service] = map[string][]byte{}
+						}
+						rc.UpdatedDefinitions[service][path] = updatedDefinition
+						definitionCount++
+					}
+				}
+			}
+			return fmt.Sprintf("Updated %d definition files for %d services", definitionCount, len(rc.UpdatedDefinitions)), nil
 		},
 	}
 }
@@ -429,9 +374,28 @@ func (r *Releaser) releaseActionCommitAndPush(msg string) ReleaseAction {
 		Name:        "commit_and_push",
 		Description: "Commit and push the config repo.",
 		Do: func(rc *ReleaseContext) (res string, err error) {
-			if fi, err := os.Stat(rc.WorkingDir); err != nil || !fi.IsDir() {
-				return "", fmt.Errorf("the repo path (%s) is not valid", rc.WorkingDir)
+			if len(rc.UpdatedDefinitions) == 0 {
+				return "No definitions updated, nothing to commit", nil
 			}
+
+			path := rc.RepoPath()
+			if fi, err := os.Stat(path); err != nil || !fi.IsDir() {
+				return "", fmt.Errorf("the repo path (%s) is not valid", path)
+			}
+			// Write each changed definition file back, so commit/push works.
+			for service, definitions := range rc.UpdatedDefinitions {
+				for path, definition := range definitions {
+					fi, err := os.Stat(path)
+					if err != nil {
+						return "", errors.Wrapf(err, "writing new definition file for %s: %s", service, path)
+					}
+
+					if err := ioutil.WriteFile(path, definition, fi.Mode()); err != nil {
+						return "", errors.Wrapf(err, "writing new definition file for %s: %s", service, path)
+					}
+				}
+			}
+
 			result, err := rc.CommitAndPush(msg)
 			if err == nil && result == "" {
 				return "Pushed commit: " + msg, nil
@@ -449,11 +413,18 @@ func service2string(a []flux.ServiceID) []string {
 	return s
 }
 
-func (r *Releaser) releaseActionReleaseServices(services []flux.ServiceID, msg string) ReleaseAction {
+func (r *Releaser) releaseActionApplyToPlatform(msg string) ReleaseAction {
 	return ReleaseAction{
-		Name:        "release_services",
-		Description: fmt.Sprintf("Release %d service(s): %s.", len(services), strings.Join(service2string(services), ", ")),
+		Name: "apply_to_platform",
+		// TODO: take the platform here and *ask* it what type it is, instead of
+		// assuming kubernetes.
+		Description: "Rolling-update to Kubernetes",
 		Do: func(rc *ReleaseContext) (res string, err error) {
+			definitions := rc.UpdatedDefinitions
+			if len(definitions) == 0 {
+				definitions = rc.Definitions
+			}
+
 			cause := strconv.Quote(msg)
 
 			// We'll collect results for each service release.
@@ -466,27 +437,24 @@ func (r *Releaser) releaseActionReleaseServices(services []flux.ServiceID, msg s
 			// see the reply).
 			var asyncDefs []platform.ServiceDefinition
 
-			for _, service := range services {
-				def, ok := rc.Definitions[service]
-				if !ok {
-					results[service] = errors.New("no definition found; skipping release")
-					continue
-				}
-
+			for service, changedDefs := range definitions {
 				namespace, serviceName := service.Components()
-				switch serviceName {
-				case FluxServiceName, FluxDaemonName:
-					rc.Instance.LogEvent(namespace, serviceName, "Starting "+cause+". (no result expected)")
-					asyncDefs = append(asyncDefs, platform.ServiceDefinition{
-						ServiceID:     service,
-						NewDefinition: def,
-					})
-				default:
-					rc.Instance.LogEvent(namespace, serviceName, "Starting "+cause)
-					defs = append(defs, platform.ServiceDefinition{
-						ServiceID:     service,
-						NewDefinition: def,
-					})
+				// Apply each changed definition file for this service
+				for _, def := range changedDefs {
+					switch serviceName {
+					case FluxServiceName, FluxDaemonName:
+						rc.Instance.LogEvent(namespace, serviceName, "Starting "+cause+". (no result expected)")
+						asyncDefs = append(asyncDefs, platform.ServiceDefinition{
+							ServiceID:     service,
+							NewDefinition: def,
+						})
+					default:
+						rc.Instance.LogEvent(namespace, serviceName, "Starting "+cause)
+						defs = append(defs, platform.ServiceDefinition{
+							ServiceID:     service,
+							NewDefinition: def,
+						})
+					}
 				}
 			}
 
@@ -500,14 +468,14 @@ func (r *Releaser) releaseActionReleaseServices(services []flux.ServiceID, msg s
 						results[id] = applyErr
 					}
 				default: // assume everything failed, if there was a coverall error
-					for _, service := range services {
+					for service, _ := range definitions {
 						results[service] = transactionErr
 					}
 				}
 			}
 
 			// Report individual service release results.
-			for _, service := range services {
+			for service := range definitions {
 				namespace, serviceName := service.Components()
 				switch serviceName {
 				case FluxServiceName, FluxDaemonName:

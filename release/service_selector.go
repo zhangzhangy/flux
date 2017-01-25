@@ -14,6 +14,7 @@ import (
 type ServiceSelector interface {
 	String() string
 	SelectServices(*instance.Instance) ([]platform.Service, error)
+	SelectDefinitions(definitionsDir string) (map[flux.ServiceID]map[string][]byte, []flux.ServiceID, error)
 }
 
 func ServiceSelectorForSpecs(inst *instance.Instance, includeSpecs []flux.ServiceSpec, exclude []flux.ServiceID) (ServiceSelector, error) {
@@ -42,8 +43,9 @@ func ServiceSelectorForSpecs(inst *instance.Instance, includeSpecs []flux.Servic
 }
 
 type funcServiceQuery struct {
-	text string
-	f    func(inst *instance.Instance) ([]platform.Service, error)
+	text              string
+	selectServices    func(inst *instance.Instance) ([]platform.Service, error)
+	selectDefinitions func(string) (map[flux.ServiceID][]byte, error)
 }
 
 func (f funcServiceQuery) String() string {
@@ -51,7 +53,11 @@ func (f funcServiceQuery) String() string {
 }
 
 func (f funcServiceQuery) SelectServices(inst *instance.Instance) ([]platform.Service, error) {
-	return f.f(inst)
+	return f.selectServices(inst)
+}
+
+func (f funcServiceQuery) SelectDefinitions(path string) (map[flux.ServiceID]map[string][]byte, error) {
+	return f.selectDefinitions(path)
 }
 
 func ExactlyTheseServices(include flux.ServiceIDSet) ServiceSelector {
@@ -69,8 +75,26 @@ func ExactlyTheseServices(include flux.ServiceIDSet) ServiceSelector {
 	}
 	return funcServiceQuery{
 		text: text,
-		f: func(h *instance.Instance) ([]platform.Service, error) {
+		selectServices: func(h *instance.Instance) ([]platform.Service, error) {
 			return h.GetServices(idSlice)
+		},
+		selectDefinitions: func(path string) (map[flux.ServiceID]map[string][]byte, []flux.ServiceID, error) {
+			all, _, err := AllServicesExcept.SelectDefinitions(path)
+			if err != nil {
+				return nil, nil, err
+			}
+
+			var skipped []flux.ServiceID
+			definitions := map[flux.ServiceID][]byte{}
+			for id := range include {
+				def, ok := all[id]
+				if !ok {
+					skipped = append(skipped, id)
+					continue
+				}
+				definitions[id] = def
+			}
+			return definitions, skipped, nil
 		},
 	}
 }
@@ -86,8 +110,39 @@ func AllServicesExcept(exclude flux.ServiceIDSet) ServiceSelector {
 	}
 	return funcServiceQuery{
 		text: text,
-		f: func(h *instance.Instance) ([]platform.Service, error) {
+		selectServices: func(h *instance.Instance) ([]platform.Service, error) {
 			return h.GetAllServicesExcept("", exclude)
+		},
+		selectDefinitions: func(path string) (map[flux.ServiceID]map[string][]byte, []flux.ServiceID, error) {
+			if fi, err := os.Stat(path); err != nil || !fi.IsDir() {
+				return "", fmt.Errorf("the resource path (%s) is not valid", path)
+			}
+
+			allFiles, err := kubernetes.DefinedServices(path)
+			if err != nil {
+				return nil, nil, err
+			}
+
+			definitions := map[flux.ServiceID]map[string][]byte{}
+			for id, files := range all {
+				if exclude.Contains(id) {
+					continue
+				}
+
+				if len(files) > 1 {
+					return nil, nil, fmt.Errorf("multiple resource definition files found for %s: %s", id, strings.Join(files, ", "))
+				}
+				if len(files) <= 0 {
+					continue
+				}
+
+				def, err := ioutil.ReadFile(files[0]) // TODO(mb) not multi-doc safe
+				if err != nil {
+					return nil, nil, err
+				}
+				definitions[id] = map[string][]byte{files[0]: def}
+			}
+			return definitions, nil, nil
 		},
 	}
 }
