@@ -104,8 +104,8 @@ func handleListServices(s api.FluxService) http.Handler {
 	})
 }
 
-func invokeListServices(client *http.Client, t flux.Token, router *mux.Router, endpoint string, namespace string) ([]flux.ServiceStatus, error) {
-	u, err := makeURL(endpoint, router, "ListServices", "namespace", namespace)
+func InvokeListServices(client *http.Client, t flux.Token, router *mux.Router, endpoint string, namespace string) ([]flux.ServiceStatus, error) {
+	u, err := MakeURL(endpoint, router, "ListServices", "namespace", namespace)
 	if err != nil {
 		return nil, errors.Wrap(err, "constructing URL")
 	}
@@ -155,8 +155,8 @@ func handleListImages(s api.FluxService) http.Handler {
 	})
 }
 
-func invokeListImages(client *http.Client, t flux.Token, router *mux.Router, endpoint string, s flux.ServiceSpec) ([]flux.ImageStatus, error) {
-	u, err := makeURL(endpoint, router, "ListImages", "service", string(s))
+func InvokeListImages(client *http.Client, t flux.Token, router *mux.Router, endpoint string, s flux.ServiceSpec) ([]flux.ImageStatus, error) {
+	u, err := MakeURL(endpoint, router, "ListImages", "service", string(s))
 	if err != nil {
 		return nil, errors.Wrap(err, "constructing URL")
 	}
@@ -256,7 +256,7 @@ func handlePostRelease(s api.FluxService) http.Handler {
 	})
 }
 
-func invokePostRelease(client *http.Client, t flux.Token, router *mux.Router, endpoint string, s jobs.ReleaseJobParams) (jobs.JobID, error) {
+func InvokePostRelease(client *http.Client, t flux.Token, router *mux.Router, endpoint string, s jobs.ReleaseJobParams) (jobs.JobID, error) {
 	args := []string{"image", string(s.ImageSpec), "kind", string(s.Kind)}
 	for _, spec := range s.ServiceSpecs {
 		args = append(args, "service", string(spec))
@@ -265,7 +265,7 @@ func invokePostRelease(client *http.Client, t flux.Token, router *mux.Router, en
 		args = append(args, "exclude", string(ex))
 	}
 
-	u, err := makeURL(endpoint, router, "PostRelease", args...)
+	u, err := MakeURL(endpoint, router, "PostRelease", args...)
 	if err != nil {
 		return "", errors.Wrap(err, "constructing URL")
 	}
@@ -295,6 +295,7 @@ func handleGetRelease(s api.FluxService) http.Handler {
 		id := mux.Vars(r)["id"]
 		job, err := s.GetRelease(inst, jobs.JobID(id))
 		if err != nil {
+			// TODO: This always writes a 500, even if 404
 			w.WriteHeader(http.StatusInternalServerError)
 			fmt.Fprintf(w, err.Error())
 			return
@@ -309,8 +310,8 @@ func handleGetRelease(s api.FluxService) http.Handler {
 	})
 }
 
-func invokeGetRelease(client *http.Client, t flux.Token, router *mux.Router, endpoint string, id jobs.JobID) (jobs.Job, error) {
-	u, err := makeURL(endpoint, router, "GetRelease", "id", string(id))
+func InvokeGetRelease(client *http.Client, t flux.Token, router *mux.Router, endpoint string, id jobs.JobID) (jobs.Job, error) {
+	u, err := MakeURL(endpoint, router, "GetRelease", "id", string(id))
 	if err != nil {
 		return jobs.Job{}, errors.Wrap(err, "constructing URL")
 	}
@@ -355,8 +356,8 @@ func handleAutomate(s api.FluxService) http.Handler {
 	})
 }
 
-func invokeAutomate(client *http.Client, t flux.Token, router *mux.Router, endpoint string, s flux.ServiceID) error {
-	u, err := makeURL(endpoint, router, "Automate", "service", string(s))
+func InvokeAutomate(client *http.Client, t flux.Token, router *mux.Router, endpoint string, s flux.ServiceID) error {
+	u, err := MakeURL(endpoint, router, "Automate", "service", string(s))
 	if err != nil {
 		return errors.Wrap(err, "constructing URL")
 	}
@@ -397,8 +398,8 @@ func handleDeautomate(s api.FluxService) http.Handler {
 	})
 }
 
-func invokeDeautomate(client *http.Client, t flux.Token, router *mux.Router, endpoint string, id flux.ServiceID) error {
-	u, err := makeURL(endpoint, router, "Deautomate", "service", string(id))
+func InvokeDeautomate(client *http.Client, t flux.Token, router *mux.Router, endpoint string, id flux.ServiceID) error {
+	u, err := MakeURL(endpoint, router, "Deautomate", "service", string(id))
 	if err != nil {
 		return errors.Wrap(err, "constructing URL")
 	}
@@ -440,8 +441,8 @@ func handleLock(s api.FluxService) http.Handler {
 	})
 }
 
-func invokeLock(client *http.Client, t flux.Token, router *mux.Router, endpoint string, id flux.ServiceID) error {
-	u, err := makeURL(endpoint, router, "Lock", "service", string(id))
+func InvokeLock(client *http.Client, t flux.Token, router *mux.Router, endpoint string, id flux.ServiceID) error {
+	u, err := MakeURL(endpoint, router, "Lock", "service", string(id))
 	if err != nil {
 		return errors.Wrap(err, "constructing URL")
 	}
@@ -482,8 +483,8 @@ func handleUnlock(s api.FluxService) http.Handler {
 	})
 }
 
-func invokeUnlock(client *http.Client, t flux.Token, router *mux.Router, endpoint string, id flux.ServiceID) error {
-	u, err := makeURL(endpoint, router, "Unlock", "service", string(id))
+func InvokeUnlock(client *http.Client, t flux.Token, router *mux.Router, endpoint string, id flux.ServiceID) error {
+	u, err := MakeURL(endpoint, router, "Unlock", "service", string(id))
 	if err != nil {
 		return errors.Wrap(err, "constructing URL")
 	}
@@ -530,8 +531,8 @@ func handleHistory(s api.FluxService) http.Handler {
 	})
 }
 
-func invokeHistory(client *http.Client, t flux.Token, router *mux.Router, endpoint string, s flux.ServiceSpec) ([]flux.HistoryEntry, error) {
-	u, err := makeURL(endpoint, router, "History", "service", string(s))
+func InvokeHistory(client *http.Client, t flux.Token, router *mux.Router, endpoint string, s flux.ServiceSpec) ([]flux.HistoryEntry, error) {
+	u, err := MakeURL(endpoint, router, "History", "service", string(s))
 	if err != nil {
 		return nil, errors.Wrap(err, "constructing URL")
 	}
@@ -579,8 +580,8 @@ func handleGetConfig(s api.FluxService) http.Handler {
 	})
 }
 
-func invokeGetConfig(client *http.Client, t flux.Token, router *mux.Router, endpoint string) (flux.InstanceConfig, error) {
-	u, err := makeURL(endpoint, router, "GetConfig")
+func InvokeGetConfig(client *http.Client, t flux.Token, router *mux.Router, endpoint string) (flux.InstanceConfig, error) {
+	u, err := MakeURL(endpoint, router, "GetConfig")
 	if err != nil {
 		return flux.InstanceConfig{}, errors.Wrap(err, "constructing URL")
 	}
@@ -627,8 +628,8 @@ func handleSetConfig(s api.FluxService) http.Handler {
 	})
 }
 
-func invokeSetConfig(client *http.Client, t flux.Token, router *mux.Router, endpoint string, updates flux.UnsafeInstanceConfig) error {
-	u, err := makeURL(endpoint, router, "SetConfig")
+func InvokeSetConfig(client *http.Client, t flux.Token, router *mux.Router, endpoint string, updates flux.UnsafeInstanceConfig) error {
+	u, err := MakeURL(endpoint, router, "SetConfig")
 	if err != nil {
 		return errors.Wrap(err, "constructing URL")
 	}
@@ -668,8 +669,8 @@ func handleGenerateKeys(s api.FluxService) http.Handler {
 	})
 }
 
-func invokeGenerateKeys(client *http.Client, t flux.Token, router *mux.Router, endpoint string) error {
-	u, err := makeURL(endpoint, router, "GenerateDeployKeys")
+func InvokeGenerateKeys(client *http.Client, t flux.Token, router *mux.Router, endpoint string) error {
+	u, err := MakeURL(endpoint, router, "GenerateDeployKeys")
 	if err != nil {
 		return errors.Wrap(err, "constructing URL")
 	}
@@ -742,8 +743,8 @@ func handlePostIntegrationsGithub(s api.FluxService) http.Handler {
 	})
 }
 
-func invokeStatus(client *http.Client, t flux.Token, router *mux.Router, endpoint string) (flux.Status, error) {
-	u, err := makeURL(endpoint, router, "Status")
+func InvokeStatus(client *http.Client, t flux.Token, router *mux.Router, endpoint string) (flux.Status, error) {
+	u, err := MakeURL(endpoint, router, "Status")
 	if err != nil {
 		return flux.Status{}, errors.Wrap(err, "constructing URL")
 	}
@@ -849,7 +850,7 @@ func mustGetPathTemplate(route *mux.Route) string {
 	return t
 }
 
-func makeURL(endpoint string, router *mux.Router, routeName string, urlParams ...string) (*url.URL, error) {
+func MakeURL(endpoint string, router *mux.Router, routeName string, urlParams ...string) (*url.URL, error) {
 	if len(urlParams)%2 != 0 {
 		panic("urlParams must be even!")
 	}
