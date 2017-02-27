@@ -53,6 +53,8 @@ func NewRouter() *mux.Router {
 	r.NewRoute().Name("PostIntegrationsGithub").Methods("POST").Path("/v5/integrations/github").Queries("owner", "{owner}", "repository", "{repository}")
 	r.NewRoute().Name("RegisterDaemon").Methods("GET").Path("/v4/daemon")
 	r.NewRoute().Name("IsConnected").Methods("HEAD", "GET").Path("/v4/ping")
+	r.NewRoute().Name("Watch").Methods("POST").Path("/v4/watch")
+	r.NewRoute().Name("Unwatch").Methods("POST").Path("/v4/unwatch")
 
 	// We assume every request that doesn't match a route is a client
 	// calling an old or hitherto unsupported API.
@@ -81,6 +83,8 @@ func NewHandler(s api.FluxService, r *mux.Router, logger log.Logger) http.Handle
 		"PostIntegrationsGithub": handlePostIntegrationsGithub,
 		"RegisterDaemon":         handleRegister,
 		"IsConnected":            handleIsConnected,
+		"Watch":                  handleWatch,
+		"Unwatch":                handleUnwatch,
 	} {
 		var handler http.Handler
 		handler = handlerFunc(s)
@@ -395,6 +399,21 @@ func handlePostIntegrationsGithub(s api.FluxService) http.Handler {
 			return
 		}
 
+		// Use the Github API to insert the webhook, if we have webhooks configured.
+		if endpoint := s.WebhookEndpoint(); endpoint != "" {
+			err = gh.InsertWebhook(owner, repo, endpoint)
+			if err != nil {
+				httpErr, isHttpErr := err.(*httperror.APIError)
+				if isHttpErr {
+					w.WriteHeader(httpErr.StatusCode)
+				} else {
+					w.WriteHeader(http.StatusInternalServerError)
+				}
+				fmt.Fprintf(w, err.Error())
+				return
+			}
+		}
+
 		w.WriteHeader(http.StatusOK)
 	})
 }
@@ -458,6 +477,49 @@ func handleIsConnected(s api.FluxService) http.Handler {
 		default:
 			errorResponse(w, r, err)
 		}
+	})
+}
+
+type postWatchResponse struct {
+	WebhookEndpoint string `json:"webhookEndpoint"`
+}
+
+func handleWatch(s api.FluxService) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		inst := getInstanceID(r)
+		webhookEndpoint, err := s.Watch(inst)
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			fmt.Fprintf(w, err.Error())
+			return
+		}
+
+		resp := postWatchResponse{WebhookEndpoint: webhookEndpoint}
+		respBytes := bytes.Buffer{}
+		if err = json.NewEncoder(&respBytes).Encode(resp); err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			fmt.Fprintf(w, err.Error())
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(http.StatusOK)
+		w.Write(respBytes.Bytes())
+		return
+	})
+}
+
+func handleUnwatch(s api.FluxService) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		inst := getInstanceID(r)
+		err := s.Unwatch(inst)
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			fmt.Fprintf(w, err.Error())
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		return
 	})
 }
 
