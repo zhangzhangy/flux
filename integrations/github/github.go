@@ -73,6 +73,28 @@ func (g *github) InsertWebhook(ownerName string, repoName string, endpoint strin
 	return nil
 }
 
+// DeleteWebhook will delete a webhook for the given owner,
+// repo, token matching the endpoint specified.
+// If a webhook does not exist this is a noop.
+func (g *github) DeleteWebhook(ownerName string, repoName string, endpoint string) error {
+	// Get list of hooks
+	hooks, resp, err := g.client.Repositories.ListHooks(ownerName, repoName, nil)
+	if err != nil {
+		return parseError(resp, err)
+	}
+	for _, h := range hooks {
+		// If key already exists, delete
+		if *h.URL == endpoint {
+			resp, err := g.client.Repositories.DeleteHook(ownerName, repoName, *h.ID)
+			if err != nil {
+				return parseError(resp, err)
+			}
+			break
+		}
+	}
+	return nil
+}
+
 // InsertDeployKey will create a new deploy key for the given owner,
 // repo, token using the key deployKey.
 // If a key already exists with that name it will be deleted.

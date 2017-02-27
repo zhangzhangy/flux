@@ -129,6 +129,55 @@ func TestInsertWebhook_DoesExist(t *testing.T) {
 	}
 }
 
+func TestDeleteWebhook_DoesntExist(t *testing.T) {
+	setup()
+	defer teardown()
+	initHookHandlers(t, "doesntMatch")
+
+	g := github{
+		client: client,
+	}
+
+	err := g.DeleteWebhook("o", "r", "http://example.com/webhook")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if didGET != true {
+		t.Fatal("Should have requested hooks")
+	}
+	if didPOST == true {
+		t.Fatal("Should not have created hook")
+	}
+	if didDELETE != false {
+		t.Fatal("Should have not deleted hook")
+	}
+}
+
+func TestDeleteWebhook_DoesExist(t *testing.T) {
+	setup()
+	defer teardown()
+	endpoint := "http://example.com/webhook"
+	initHookHandlers(t, endpoint)
+
+	g := github{
+		client: client,
+	}
+
+	err := g.DeleteWebhook("o", "r", endpoint)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if didGET != true {
+		t.Fatal("Should have requested hooks")
+	}
+	if didPOST == true {
+		t.Fatal("Should not have created hook")
+	}
+	if didDELETE != true {
+		t.Fatal("Should have deleted hook")
+	}
+}
+
 func TestInsertDeployKey_KeyDoesntExist(t *testing.T) {
 	setup()
 	defer teardown()
