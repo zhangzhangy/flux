@@ -50,7 +50,7 @@ func (g *github) InsertWebhook(ownerName string, repoName string, endpoint strin
 	}
 	for _, h := range hooks {
 		// If key already exists, delete
-		if *h.Title == webhookName {
+		if *h.URL == endpoint {
 			resp, err := g.client.Repositories.DeleteHook(ownerName, repoName, *h.ID)
 			if err != nil {
 				return parseError(resp, err)
