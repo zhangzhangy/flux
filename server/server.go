@@ -2,6 +2,7 @@ package server
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -63,8 +64,11 @@ func New(
 // same reason: let's not add abstraction until it's merged, or nearly so, and
 // it's clear where the abstraction should exist.
 
-func (s *Server) WebhookEndpoint() string {
-	return s.webhookEndpoint
+func (s *Server) WebhookEndpoint(inst flux.InstanceID) string {
+	if inst == flux.DefaultInstanceID {
+		return s.webhookEndpoint
+	}
+	return filepath.Join(s.webhookEndpoint, string(inst))
 }
 
 func (s *Server) Status(inst flux.InstanceID) (res flux.Status, err error) {
@@ -429,4 +433,38 @@ func (s *Server) instrumentPlatform(instID flux.InstanceID, p platform.Platform)
 
 func (s *Server) IsDaemonConnected(instID flux.InstanceID) error {
 	return s.messageBus.Ping(instID)
+}
+
+func (s *Server) Watch(instID flux.InstanceID) (string, error) {
+	// Get current config
+	cfg, err := s.GetConfig(instID)
+	if err != nil {
+		return "", err
+	}
+	cfg.Watching = true
+
+	// TODO: Sync the repo, and apply the state immediately!
+
+	// Set new config
+	if err := s.config.UpdateConfig(instID, applyConfigUpdates(flux.UnsafeInstanceConfig(cfg))); err != nil {
+		return "", err
+	}
+	return s.WebhookEndpoint(), nil
+}
+
+func (s *Server) Unwatch(instID flux.InstanceID) error {
+	// Get current config
+	cfg, err := s.GetConfig(instID)
+	if err != nil {
+		return err
+	}
+	cfg.Watching = false
+
+	// Set new config
+	return s.config.UpdateConfig(instID, applyConfigUpdates(flux.UnsafeInstanceConfig(cfg)))
+}
+
+func (s *Server) RepoUpdate(instID flux.InstanceID) error {
+	// Schedule a sync job, if there isn't one already scheduled
+	return fmt.Errorf("TODO: implement server.Server.RepoUpdate")
 }

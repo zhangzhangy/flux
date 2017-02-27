@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/go-kit/kit/log"
+	gh "github.com/google/go-github/github"
 	"github.com/gorilla/mux"
 	"github.com/pkg/errors"
 	"github.com/weaveworks/common/middleware"
@@ -55,6 +56,7 @@ func NewRouter() *mux.Router {
 	r.NewRoute().Name("IsConnected").Methods("HEAD", "GET").Path("/v4/ping")
 	r.NewRoute().Name("Watch").Methods("POST").Path("/v4/watch")
 	r.NewRoute().Name("Unwatch").Methods("POST").Path("/v4/unwatch")
+	r.NewRoute().Name("Hooks").Methods("POST").Path("/hooks/{externalInstanceID}") // Unversioned, as this gets put into remote services
 
 	// We assume every request that doesn't match a route is a client
 	// calling an old or hitherto unsupported API.
@@ -85,6 +87,7 @@ func NewHandler(s api.FluxService, r *mux.Router, logger log.Logger) http.Handle
 		"IsConnected":            handleIsConnected,
 		"Watch":                  handleWatch,
 		"Unwatch":                handleUnwatch,
+		"Hooks":                  handleHooks,
 	} {
 		var handler http.Handler
 		handler = handlerFunc(s)
@@ -521,6 +524,61 @@ func handleUnwatch(s api.FluxService) http.Handler {
 		w.WriteHeader(http.StatusOK)
 		return
 	})
+}
+
+func handleHooks(s api.FluxService) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Figure out where it came from
+		// This is done by presence of headers.
+		if r.Header.Get("X-GitHub-Delivery") == "" {
+			// It's not from github... eh? They're the only ones we support right
+			// now, so bail.
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+
+		payload, err := ioutil.ReadAll(r.Body)
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			fmt.Fprintf(w, err.Error())
+			return
+		}
+		r.Body.Close()
+
+		// Parse the event
+		event, err := gh.ParseWebHook(gh.WebHookType(r), payload)
+		if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			fmt.Fprintf(w, err.Error())
+			return
+		}
+
+		// For now we only do anything on push events from github
+		switch event.(type) {
+		case *gh.PushEvent:
+			inst, err := internalInstanceIDFromExternal(mux.Vars(r)["externalInstanceID"])
+			if err != nil {
+				w.WriteHeader(http.StatusInternalServerError)
+				fmt.Fprintf(w, err.Error())
+				return
+			}
+
+			err := s.RepoUpdate(inst)
+			if err != nil {
+				w.WriteHeader(http.StatusInternalServerError)
+				fmt.Fprintf(w, err.Error())
+				return
+			}
+		}
+
+		w.WriteHeader(http.StatusOK)
+		return
+	})
+}
+
+// map external instance
+func internalInstanceIDFromExternal(ext string) (flux.InstanceID, error) {
+	return flux.DefaultInstanceID, fmt.Errorf("TODO: implement http.internalInstanceIDFromExternal")
 }
 
 // --- end handle
