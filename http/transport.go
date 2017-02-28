@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"net"
 	"net/http"
 	"net/url"
@@ -403,7 +404,13 @@ func handlePostIntegrationsGithub(s api.FluxService) http.Handler {
 		}
 
 		// Use the Github API to insert the webhook, if we have webhooks configured.
-		if endpoint := s.WebhookEndpoint(); endpoint != "" {
+		endpoint, err := s.WebhookEndpoint(inst)
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			fmt.Fprintf(w, err.Error())
+			return
+		}
+		if endpoint != "" {
 			err = gh.InsertWebhook(owner, repo, endpoint)
 			if err != nil {
 				httpErr, isHttpErr := err.(*httperror.APIError)
@@ -563,8 +570,7 @@ func handleHooks(s api.FluxService) http.Handler {
 				return
 			}
 
-			err := s.RepoUpdate(inst)
-			if err != nil {
+			if err := s.RepoUpdate(inst); err != nil {
 				w.WriteHeader(http.StatusInternalServerError)
 				fmt.Fprintf(w, err.Error())
 				return

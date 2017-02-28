@@ -33,6 +33,7 @@ type Server struct {
 	config          instance.DB
 	messageBus      platform.MessageBus
 	jobs            jobs.JobStore
+	idMapper        instance.IDMapper
 	logger          log.Logger
 	maxPlatform     chan struct{} // semaphore for concurrent calls to the platform
 	connected       int32
@@ -44,6 +45,7 @@ func New(
 	config instance.DB,
 	messageBus platform.MessageBus,
 	jobs jobs.JobStore,
+	idMapper instance.IDMapper,
 	logger log.Logger,
 ) *Server {
 	connectedDaemons.Set(0)
@@ -53,6 +55,7 @@ func New(
 		config:      config,
 		messageBus:  messageBus,
 		jobs:        jobs,
+		idMapper:    idMapper,
 		logger:      logger,
 		maxPlatform: make(chan struct{}, 8),
 	}
@@ -64,11 +67,12 @@ func New(
 // same reason: let's not add abstraction until it's merged, or nearly so, and
 // it's clear where the abstraction should exist.
 
-func (s *Server) WebhookEndpoint(inst flux.InstanceID) string {
-	if inst == flux.DefaultInstanceID {
-		return s.webhookEndpoint
+func (s *Server) WebhookEndpoint(inst flux.InstanceID) (string, error) {
+	external, err := s.idMapper.ConvertInternalInstanceIDToExternal(inst)
+	if err != nil {
+		return "", errors.Wrap(err, "fetching instance id")
 	}
-	return filepath.Join(s.webhookEndpoint, string(inst))
+	return filepath.Join(s.webhookEndpoint, external), nil
 }
 
 func (s *Server) Status(inst flux.InstanceID) (res flux.Status, err error) {
@@ -449,7 +453,7 @@ func (s *Server) Watch(instID flux.InstanceID) (string, error) {
 	if err := s.config.UpdateConfig(instID, applyConfigUpdates(flux.UnsafeInstanceConfig(cfg))); err != nil {
 		return "", err
 	}
-	return s.WebhookEndpoint(), nil
+	return s.WebhookEndpoint(instID)
 }
 
 func (s *Server) Unwatch(instID flux.InstanceID) error {
@@ -465,6 +469,11 @@ func (s *Server) Unwatch(instID flux.InstanceID) error {
 }
 
 func (s *Server) RepoUpdate(instID flux.InstanceID) error {
+	_, err := s.idMapper.ConvertInternalInstanceIDToExternal(instID)
+	if err != nil {
+		return errors.Wrap(err, "fetching instance id")
+	}
+
 	// Schedule a sync job, if there isn't one already scheduled
 	return fmt.Errorf("TODO: implement server.Server.RepoUpdate")
 }
