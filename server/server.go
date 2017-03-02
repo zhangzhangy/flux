@@ -27,20 +27,20 @@ const (
 )
 
 type Server struct {
-	version         string
-	webhookEndpoint string
-	instancer       instance.Instancer
-	config          instance.DB
-	messageBus      platform.MessageBus
-	jobs            jobs.JobStore
-	idMapper        instance.IDMapper
-	logger          log.Logger
-	maxPlatform     chan struct{} // semaphore for concurrent calls to the platform
-	connected       int32
+	version     string
+	webhookURL  string
+	instancer   instance.Instancer
+	config      instance.DB
+	messageBus  platform.MessageBus
+	jobs        jobs.JobStore
+	idMapper    instance.IDMapper
+	logger      log.Logger
+	maxPlatform chan struct{} // semaphore for concurrent calls to the platform
+	connected   int32
 }
 
 func New(
-	version, webhookEndpoint string,
+	version, webhookURL string,
 	instancer instance.Instancer,
 	config instance.DB,
 	messageBus platform.MessageBus,
@@ -67,12 +67,12 @@ func New(
 // same reason: let's not add abstraction until it's merged, or nearly so, and
 // it's clear where the abstraction should exist.
 
-func (s *Server) WebhookEndpoint(inst flux.InstanceID) (string, error) {
+func (s *Server) WebhookURL(inst flux.InstanceID) (string, error) {
 	external, err := s.idMapper.ConvertInternalInstanceIDToExternal(inst)
 	if err != nil {
 		return "", errors.Wrap(err, "fetching instance id")
 	}
-	return filepath.Join(s.webhookEndpoint, external), nil
+	return filepath.Join(s.webhookURL, external), nil
 }
 
 func (s *Server) Status(inst flux.InstanceID) (res flux.Status, err error) {
@@ -453,7 +453,7 @@ func (s *Server) Watch(instID flux.InstanceID) (string, error) {
 	if err := s.config.UpdateConfig(instID, applyConfigUpdates(flux.UnsafeInstanceConfig(cfg))); err != nil {
 		return "", err
 	}
-	return s.WebhookEndpoint(instID)
+	return s.WebhookURL(instID)
 }
 
 func (s *Server) Unwatch(instID flux.InstanceID) error {

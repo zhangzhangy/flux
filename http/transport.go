@@ -404,7 +404,7 @@ func handlePostIntegrationsGithub(s api.FluxService) http.Handler {
 		}
 
 		// Use the Github API to insert the webhook, if we have webhooks configured.
-		endpoint, err := s.WebhookEndpoint(inst)
+		endpoint, err := s.WebhookURL(inst)
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
 			fmt.Fprintf(w, err.Error())
@@ -491,20 +491,20 @@ func handleIsConnected(s api.FluxService) http.Handler {
 }
 
 type postWatchResponse struct {
-	WebhookEndpoint string `json:"webhookEndpoint"`
+	WebhookURL string `json:"webhookURL"`
 }
 
 func handleWatch(s api.FluxService) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		inst := getInstanceID(r)
-		webhookEndpoint, err := s.Watch(inst)
+		webhookURL, err := s.Watch(inst)
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
 			fmt.Fprintf(w, err.Error())
 			return
 		}
 
-		resp := postWatchResponse{WebhookEndpoint: webhookEndpoint}
+		resp := postWatchResponse{WebhookURL: webhookURL}
 		respBytes := bytes.Buffer{}
 		if err = json.NewEncoder(&respBytes).Encode(resp); err != nil {
 			w.WriteHeader(http.StatusInternalServerError)

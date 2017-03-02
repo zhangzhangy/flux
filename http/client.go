@@ -108,7 +108,7 @@ func (c *client) Status(_ flux.InstanceID) (flux.Status, error) {
 func (c *client) Watch(_ flux.InstanceID) (string, error) {
 	var resp postWatchResponse
 	err := c.postWithResp(&resp, "Watch", nil)
-	return resp.WebhookEndpoint, err
+	return resp.WebhookURL, err
 }
 
 func (c *client) Unwatch(_ flux.InstanceID) error {

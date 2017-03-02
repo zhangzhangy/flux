@@ -54,7 +54,7 @@ func main() {
 		memcachedService      = fs.String("memcached-service", "memcached", "SRV service used to discover memcache servers.")
 		registryCacheExpiry   = fs.Duration("registry-cache-expiry", 20*time.Minute, "Duration to keep cached registry tag info. Must be < 1 month.")
 		versionFlag           = fs.Bool("version", false, "Get version number")
-		webhookEndpoint       = fs.String("webhook-endpoint", "", "Endpoint where webhooks should be configured to post to. If empty, no webhooks will be installed.")
+		webhookURL            = fs.String("webhook-url", "", "Base URL where webhooks should be configured to post to. If empty, no webhooks will be installed.")
 		instanceService       = fs.String("instance-service", "", `GRPC service to look up instances, for converting internal to external IDs (e.g. "<service>.<namespace>:<port>"). If empty, instance IDs will not be converted.`)
 	)
 	fs.Parse(os.Args)
@@ -230,7 +230,7 @@ func main() {
 	}
 
 	// The server.
-	server := server.New(version, *webhookEndpoint, instancer, instanceDB, messageBus, jobStore, idMapper, logger)
+	server := server.New(version, *webhookURL, instancer, instanceDB, messageBus, jobStore, idMapper, logger)
 
 	// Mechanical components.
 	errc := make(chan error)
