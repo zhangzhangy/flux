@@ -31,7 +31,7 @@ type DaemonService interface {
 
 type WebService interface {
 	WebhookURL(flux.InstanceID) (string, error)
-	RepoUpdate(flux.InstanceID) error
+	RepoUpdate(externalInstanceID string) error
 }
 
 type FluxService interface {

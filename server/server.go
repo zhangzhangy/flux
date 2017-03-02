@@ -68,7 +68,7 @@ func New(
 // it's clear where the abstraction should exist.
 
 func (s *Server) WebhookURL(inst flux.InstanceID) (string, error) {
-	external, err := s.idMapper.ConvertInternalInstanceIDToExternal(inst)
+	external, err := s.idMapper.ExternalInstanceID(inst)
 	if err != nil {
 		return "", errors.Wrap(err, "fetching instance id")
 	}
@@ -468,12 +468,24 @@ func (s *Server) Unwatch(instID flux.InstanceID) error {
 	return s.config.UpdateConfig(instID, applyConfigUpdates(flux.UnsafeInstanceConfig(cfg)))
 }
 
-func (s *Server) RepoUpdate(instID flux.InstanceID) error {
-	_, err := s.idMapper.ConvertInternalInstanceIDToExternal(instID)
+func (s *Server) RepoUpdate(externalInstanceID string) error {
+	inst, err := s.idMapper.InternalInstanceID(externalInstanceID)
 	if err != nil {
-		return errors.Wrap(err, "fetching instance id")
+		return err
 	}
 
-	// Schedule a sync job, if there isn't one already scheduled
-	return fmt.Errorf("TODO: implement server.Server.RepoUpdate")
+	_, err = s.jobs.PutJob(inst, jobs.Job{
+		Queue: jobs.SyncJob,
+		// Key stops us getting two queued jobs for the same instance
+		Key: strings.Join([]string{
+			jobs.SyncJob,
+			string(inst),
+		}, "|"),
+		Method:   jobs.SyncJob,
+		Priority: jobs.PriorityBackground,
+		Params: jobs.SyncJobParams{
+			InstanceID: inst,
+		},
+	})
+	return err
 }

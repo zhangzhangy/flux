@@ -563,14 +563,7 @@ func handleHooks(s api.FluxService) http.Handler {
 		// For now we only do anything on push events from github
 		switch event.(type) {
 		case *gh.PushEvent:
-			inst, err := internalInstanceIDFromExternal(mux.Vars(r)["externalInstanceID"])
-			if err != nil {
-				w.WriteHeader(http.StatusInternalServerError)
-				fmt.Fprintf(w, err.Error())
-				return
-			}
-
-			if err := s.RepoUpdate(inst); err != nil {
+			if err := s.RepoUpdate(mux.Vars(r)["externalInstanceID"]); err != nil {
 				w.WriteHeader(http.StatusInternalServerError)
 				fmt.Fprintf(w, err.Error())
 				return
