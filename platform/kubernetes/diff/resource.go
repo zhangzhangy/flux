@@ -13,10 +13,23 @@ type ObjectID struct {
 }
 
 type Object interface {
+	ID() ObjectID
 	// Source gives a string representation of the origin of the
 	// Object definition, whether it's a file (possibly a part of a
 	// file) or a cluster.
 	Source() string
+}
+
+type baseObject struct {
+	ObjectID
+}
+
+func (obj baseObject) ID() ObjectID {
+	return obj.ObjectID
+}
+
+func (obj baseObject) Source() string {
+	return "[base implementation]"
 }
 
 // Diff one object with another. This assumes that the objects being
