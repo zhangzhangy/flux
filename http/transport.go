@@ -41,6 +41,7 @@ func NewRouter() *mux.Router {
 	r.NewRoute().Name("PostIntegrationsGithub").Methods("POST").Path("/v5/integrations/github").Queries("owner", "{owner}", "repository", "{repository}")
 	r.NewRoute().Name("RegisterDaemon").Methods("GET").Path("/v4/daemon")
 	r.NewRoute().Name("IsConnected").Methods("HEAD", "GET").Path("/v4/ping")
+	r.NewRoute().Name("Export").Methods("HEAD", "GET").Path("/v5/export")
 
 	// We assume every request that doesn't match a route is a client
 	// calling an old or hitherto unsupported API.
