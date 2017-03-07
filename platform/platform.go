@@ -20,6 +20,7 @@ type Platform interface {
 	Apply([]ServiceDefinition) error
 	Ping() error
 	Version() (string, error)
+	Export() ([]byte, error)
 }
 
 // Wrap errors in this to indicate that the platform should be

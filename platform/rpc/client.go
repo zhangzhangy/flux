@@ -91,6 +91,16 @@ func (p *RPCClient) Version() (string, error) {
 	return version, err
 }
 
+// Export is used to get service configuration in platform-specific format
+func (p *RPCClient) Export() ([]byte, error) {
+	var config []byte
+	err := p.client.Call("RPCServer.Export", struct{}{}, &config)
+	if _, ok := err.(rpc.ServerError); !ok && err != nil {
+		return nil, platform.FatalError{err}
+	}
+	return config, err
+}
+
 // Close closes the connection to the remote platform, it does *not* cause the
 // remote platform to shut down.
 func (p *RPCClient) Close() error {

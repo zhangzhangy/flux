@@ -32,6 +32,7 @@ const (
 	methodAllServices  = ".Platform.AllServices"
 	methodSomeServices = ".Platform.SomeServices"
 	methodApply        = ".Platform.Apply"
+	methodExport       = ".Platform.Export"
 )
 
 type NATS struct {
@@ -127,6 +128,13 @@ type version struct{}
 
 type VersionResponse struct {
 	Version string
+	ErrorResponse
+}
+
+type export struct{}
+
+type ExportResponse struct {
+	Config []byte
 	ErrorResponse
 }
 
@@ -226,6 +234,17 @@ func (r *natsPlatform) Version() (string, error) {
 		return "", err
 	}
 	return response.Version, extractError(response.ErrorResponse)
+}
+
+func (r *natsPlatform) Export() ([]byte, error) {
+	var response ExportResponse
+	if err := r.conn.Request(r.instance+methodExport, export{}, &response, timeout); err != nil {
+		if err == nats.ErrTimeout {
+			err = platform.UnavailableError(err)
+		}
+		return nil, err
+	}
+	return response.Config, extractError(response.ErrorResponse)
 }
 
 // Connect returns a platform.Platform implementation that can be used
