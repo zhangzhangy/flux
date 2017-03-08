@@ -5,6 +5,18 @@ import (
 	"io"
 )
 
+func (d changed) Summarise(out io.Writer) {
+	fmt.Fprintf(out, "* %s: %v != %v\n", d.path, d.a, d.b)
+}
+
+func (d added) Summarise(out io.Writer) {
+	fmt.Fprintf(out, "+ %s: %v\n", d.path, d.value)
+}
+
+func (d removed) Summarise(out io.Writer) {
+	fmt.Fprintf(out, "- %s: %v\n", d.path, d.value)
+}
+
 func (d ObjectSetDiff) Summarise(out io.Writer) {
 	if len(d.OnlyA) > 0 {
 		fmt.Fprintf(out, "Only in %s:\n", d.A.Source)
@@ -22,7 +34,7 @@ func (d ObjectSetDiff) Summarise(out io.Writer) {
 	}
 	if len(d.Different) > 0 {
 		for id, diffs := range d.Different {
-			fmt.Fprintf(out, "%s %s/%s is different\n", id.Kind, id.Namespace, id.Name)
+			fmt.Fprintf(out, "%s %s/%s is different:\n", id.Kind, id.Namespace, id.Name)
 			for _, diff := range diffs {
 				diff.Summarise(out)
 			}

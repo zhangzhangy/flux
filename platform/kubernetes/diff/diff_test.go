@@ -160,18 +160,15 @@ func TestSliceDiff(t *testing.T) {
 		t.Fatal("expected more than zero differences, but got zero")
 	}
 
-	expected := sliceDiff{
-		path:  "slice",
-		len:   2,
-		OnlyA: []interface{}{"c"},
-		Different: map[int][]Difference{
-			1: []Difference{
-				valueDifference{
-					a:    "b",
-					b:    "b'",
-					path: "slice[1]",
-				},
-			},
+	expected := []Difference{
+		changed{
+			a:    "b",
+			b:    "b'",
+			path: "slice[1]",
+		},
+		removed{
+			value: "c",
+			path:  "slice[3]",
 		},
 	}
 	if !reflect.DeepEqual(expected, diffs[0]) {

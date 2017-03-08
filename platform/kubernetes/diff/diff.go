@@ -13,6 +13,21 @@ type Difference interface {
 	Summarise(out io.Writer)
 }
 
+type changed struct {
+	a, b interface{}
+	path string
+}
+
+type added struct {
+	value interface{}
+	path  string
+}
+
+type removed struct {
+	value interface{}
+	path  string
+}
+
 type ObjectSetDiff struct {
 	A, B      *ObjectSet
 	OnlyA     []Object
@@ -99,29 +114,15 @@ func diffObj(a, b reflect.Value, typ reflect.Type, path string) ([]Difference, e
 	case reflect.Struct:
 		return diffStruct(a, b, typ, path)
 	case reflect.Map:
-		return nil, errors.New("map diff not implemented")
+		return diffMap(a, b, typ.Elem(), path)
 	case reflect.Func:
 		return nil, errors.New("func dif not implemented (and not implementable)")
 	default: // all ground types
 		if a.Interface() != b.Interface() {
-			return []Difference{makeValueDiff(a, b, path)}, nil
+			return []Difference{changed{a.Interface(), b.Interface(), path}}, nil
 		}
 		return nil, nil
 	}
-}
-
-func makeValueDiff(a, b reflect.Value, path string) valueDifference {
-	return valueDifference{a.Interface(), b.Interface(), path}
-}
-
-// A difference in ground values, e.g., in a field or in a slice element
-type valueDifference struct {
-	a, b interface{}
-	path string
-}
-
-func (d valueDifference) Summarise(out io.Writer) {
-	fmt.Fprintf(out, "%s: %v != %v\n", d.path, d.a, d.b)
 }
 
 // diff each exported field individually
@@ -143,10 +144,7 @@ func diffStruct(a, b reflect.Value, structTyp reflect.Type, path string) ([]Diff
 
 // diff each element, report over- or underbite
 func diffArrayOrSlice(a, b reflect.Value, sliceTyp reflect.Type, path string) ([]Difference, error) {
-	diff := sliceDiff{
-		path:      path,
-		Different: map[int][]Difference{},
-	}
+	var diffs []Difference
 	elemTyp := sliceTyp.Elem()
 
 	i := 0
@@ -155,49 +153,44 @@ func diffArrayOrSlice(a, b reflect.Value, sliceTyp reflect.Type, path string) ([
 		if err != nil {
 			return nil, err
 		} else if len(d) > 0 {
-			diff.Different[i] = d
+			diffs = append(diffs, d...)
 		}
 	}
-	diff.len = i
 
-	if i < a.Len() {
-		diff.OnlyA = sliceValue(a, i)
-	} else if i < b.Len() {
-		diff.OnlyB = sliceValue(b, i)
+	for j := i; j < a.Len(); j++ {
+		diffs = append(diffs, removed{a.Index(j).Interface(), fmt.Sprintf("%s[%d]", path, j)})
 	}
-	if len(diff.OnlyA) > 0 || len(diff.OnlyB) > 0 || len(diff.Different) > 0 {
-		return []Difference{diff}, nil
+	for j := i; j < b.Len(); j++ {
+		diffs = append(diffs, added{b.Index(j).Interface(), fmt.Sprintf("%s[%d]", path, j)})
 	}
-	return nil, nil
+	return diffs, nil
 }
 
-func sliceValue(s reflect.Value, at int) []interface{} {
-	res := make([]interface{}, s.Len()-at)
-	for i := at; i < s.Len(); i++ {
-		res[i-at] = s.Index(i).Interface()
+func diffMap(a, b reflect.Value, elemTyp reflect.Type, path string) ([]Difference, error) {
+	if a.Kind() != reflect.Map || b.Kind() != reflect.Map {
+		return nil, errors.New("both values must be maps")
 	}
-	return res
-}
 
-type sliceDiff struct {
-	path string
-	len  int
-
-	OnlyA     []interface{}
-	OnlyB     []interface{}
-	Different map[int][]Difference
-}
-
-func (s sliceDiff) Summarise(out io.Writer) {
-	for _, diffs := range s.Different {
-		for _, diff := range diffs {
-			diff.Summarise(out)
+	var diffs []Difference
+	var zero reflect.Value
+	for _, keyA := range a.MapKeys() {
+		valA := a.MapIndex(keyA)
+		if valB := b.MapIndex(keyA); valB != zero {
+			moreDiffs, err := diffObj(valA, valB, elemTyp, fmt.Sprintf(`%s[%v]`, path, keyA))
+			if err != nil {
+				return nil, err
+			}
+			diffs = append(diffs, moreDiffs...)
+		} else {
+			diffs = append(diffs, removed{valA, fmt.Sprintf(`%s[%v]`, path, keyA)})
 		}
 	}
-	for i, removed := range s.OnlyA {
-		fmt.Fprintf(out, "Removed %s[%d]: %+v\n", s.path, s.len+i, removed)
+	for _, keyB := range b.MapKeys() {
+		valB := b.MapIndex(keyB)
+		if valA := a.MapIndex(keyB); valA != zero {
+			diffs = append(diffs, added{valB, fmt.Sprintf(`%s[%v]`, path, keyB)})
+		}
 	}
-	for i, added := range s.OnlyB {
-		fmt.Fprintf(out, "Added %s[%d]: %+v\n", s.path, s.len+i, added)
-	}
+
+	return diffs, nil
 }
