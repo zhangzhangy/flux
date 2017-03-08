@@ -38,8 +38,8 @@ metadata:
 	idA := ObjectID{"default", "Deployment", "a-deployment"}
 	idB := ObjectID{"b-namespace", "Service", "b-service"}
 	expected := ObjectSet{
-		idA: baseObject{ObjectID: idA},
-		idB: baseObject{ObjectID: idB},
+		idA: &Deployment{baseObject: baseObject{ObjectID: idA}},
+		idB: &Service{baseObject: baseObject{ObjectID: idB}},
 	}
 
 	if !reflect.DeepEqual(expected, objs) {

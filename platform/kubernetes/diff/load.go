@@ -45,26 +45,11 @@ func ParseMultidoc(multidoc []byte) (ObjectSet, error) {
 	chunks.Split(splitYAMLDocument)
 
 	for chunks.Scan() {
-		var obj struct {
-			Kind string `yaml:"kind"`
-			Meta struct {
-				Namespace string `yaml:"namespace"`
-				Name      string `yaml:"name"`
-			} `yaml:"metadata"`
-		}
-
+		var obj object
 		if err := yaml.Unmarshal(chunks.Bytes(), &obj); err != nil {
 			return objs, errors.Wrap(err, "parsing YAML doc")
 		}
-		id := ObjectID{
-			Kind:      obj.Kind,
-			Name:      obj.Meta.Name,
-			Namespace: obj.Meta.Namespace,
-		}
-		if id.Namespace == "" {
-			id.Namespace = "default"
-		}
-		objs[id] = baseObject{id}
+		objs[obj.ID()] = obj.Object
 	}
 	if err := chunks.Err(); err != nil {
 		return objs, errors.Wrap(err, "scanning multidoc")

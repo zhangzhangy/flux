@@ -1,14 +1,96 @@
 package diff
 
 import (
+	"errors"
 	"reflect"
+	"strings"
 	"testing"
 )
+
+// --- test diffing objects
+
+type TestValue struct {
+	baseObject
+	ignoreUnexported string
+	StringField      string
+	IntField         int
+	Differ           TestDiffer
+	DifferStar       *TestDiffer
+	Embedded         struct {
+		NestedValue bool
+	}
+}
+
+type TestDiffer struct {
+	CaseInsensitive string
+}
+
+func (t TestDiffer) Diff(d Differ, path string) ([]Difference, error) {
+	var other *TestDiffer
+	switch d := d.(type) {
+	case TestDiffer:
+		other = &d
+	case *TestDiffer:
+		other = d
+	default:
+		return nil, errors.New("not diffable values")
+	}
+
+	if !strings.EqualFold(t.CaseInsensitive, other.CaseInsensitive) {
+		return []Difference{valueDifference{t.CaseInsensitive, other.CaseInsensitive, path}}, nil
+	}
+	return nil, nil
+}
+
+func TestFieldwiseDiff(t *testing.T) {
+	id := ObjectID{
+		Namespace: "namespace",
+		Kind:      "TestFieldwise",
+		Name:      "testcase",
+	}
+	a := TestValue{
+		baseObject:       baseObject{id},
+		ignoreUnexported: "one value",
+		StringField:      "ground value",
+		IntField:         5,
+		Differ:           TestDiffer{"case-insensitive"},
+		DifferStar:       &TestDiffer{"case-insensitive"},
+	}
+	a.Embedded.NestedValue = true
+
+	b := TestValue{
+		baseObject:       baseObject{id},
+		ignoreUnexported: "completely different value",
+		StringField:      "a different ground value",
+		IntField:         7,
+		Differ:           TestDiffer{"CASE-INSENSITIVE"},
+		DifferStar:       &TestDiffer{"CASE-INSENSITIVE"},
+	}
+	b.Embedded.NestedValue = false
+
+	diffs, err := DiffObject(a, a)
+	if err != nil {
+		t.Error(err)
+	}
+	if len(diffs) > 0 {
+		t.Errorf("expected no diffs, got %#v", diffs)
+	}
+
+	diffs, err = DiffObject(a, b)
+	if err != nil {
+		t.Error(err)
+	}
+	if len(diffs) != 3 {
+		t.Errorf("expected three diffs, got:\n%#v", diffs)
+	}
+}
+
+// --- test whole `ObjectSet`s
 
 func TestEmptyVsEmpty(t *testing.T) {
 	setA := ObjectSet{}
 	setB := ObjectSet{}
-	diff, err := Diff(setA, setB)
+	diff, err := DiffSet(setA, setB)
 	if err != nil {
 		t.Error(err)
 	}
@@ -31,14 +113,13 @@ func TestSomeVsNone(t *testing.T) {
 	}
 	setB := ObjectSet{}
 
-	diff, err := Diff(setA, setB)
+	diff, err := DiffSet(setA, setB)
 	if err != nil {
 		t.Error(err)
 	}
 
-	expected := ObjectSetDiff{
-		OnlyA: []Object{objA},
-	}
+	expected := MakeObjectSetDiff()
+	expected.OnlyA = []Object{objA}
 	if !reflect.DeepEqual(expected, diff) {
 		t.Errorf("expected:\n%#v\ngot:\n%#v", expected, diff)
 	}
@@ -58,14 +139,13 @@ func TestNoneVsSome(t *testing.T) {
 		objB.ObjectID: objB,
 	}
 
-	diff, err := Diff(setA, setB)
+	diff, err := DiffSet(setA, setB)
 	if err != nil {
 		t.Error(err)
 	}
 
-	expected := ObjectSetDiff{
-		OnlyB: []Object{objB},
-	}
+	expected := MakeObjectSetDiff()
+	expected.OnlyB = []Object{objB}
 	if !reflect.DeepEqual(expected, diff) {
 		t.Errorf("expected:\n%#v\ngot:\n%#v", expected, diff)
 	}
