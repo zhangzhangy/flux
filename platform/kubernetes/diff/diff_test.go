@@ -148,3 +148,33 @@ func TestNoneVsSome(t *testing.T) {
 		t.Errorf("expected:\n%#v\ngot:\n%#v", expected, diff)
 	}
 }
+
+func TestSliceDiff(t *testing.T) {
+	a := []string{"a", "b", "c"}
+	b := []string{"a", "b'"}
+	diffs, err := diffObj(reflect.ValueOf(a), reflect.ValueOf(b), reflect.TypeOf(a), "slice")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(diffs) == 0 {
+		t.Fatal("expected more than zero differences, but got zero")
+	}
+
+	expected := sliceDiff{
+		path:  "slice",
+		len:   2,
+		OnlyA: []interface{}{"c"},
+		Different: map[int][]Difference{
+			1: []Difference{
+				valueDifference{
+					a:    "b",
+					b:    "b'",
+					path: "slice[1]",
+				},
+			},
+		},
+	}
+	if !reflect.DeepEqual(expected, diffs[0]) {
+		t.Errorf("expected one diff:\n%#v\ngot:\n%#v\n", expected, diffs[0])
+	}
+}

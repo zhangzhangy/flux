@@ -21,8 +21,11 @@ func (d ObjectSetDiff) Summarise(out io.Writer) {
 		}
 	}
 	if len(d.Different) > 0 {
-		for id, _ := range d.Different {
+		for id, diffs := range d.Different {
 			fmt.Fprintf(out, "%s %s/%s is different\n", id.Kind, id.Namespace, id.Name)
+			for _, diff := range diffs {
+				diff.Summarise(out)
+			}
 		}
 	}
 }

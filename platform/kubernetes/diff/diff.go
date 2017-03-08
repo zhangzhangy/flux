@@ -3,13 +3,14 @@ package diff
 import (
 	"errors"
 	"fmt"
+	"io"
 	"reflect"
 )
 
 // Difference represents an individual difference between two
 // `Object`s. This is an interface because
 type Difference interface {
-	String() string
+	Summarise(out io.Writer)
 }
 
 type ObjectSetDiff struct {
@@ -119,8 +120,8 @@ type valueDifference struct {
 	path string
 }
 
-func (d valueDifference) String() string {
-	return fmt.Sprintf("%v != %v", d.a, d.b)
+func (d valueDifference) Summarise(out io.Writer) {
+	fmt.Fprintf(out, "%s: %v != %v\n", d.path, d.a, d.b)
 }
 
 // diff each exported field individually
@@ -143,6 +144,7 @@ func diffStruct(a, b reflect.Value, structTyp reflect.Type, path string) ([]Diff
 // diff each element, report over- or underbite
 func diffArrayOrSlice(a, b reflect.Value, sliceTyp reflect.Type, path string) ([]Difference, error) {
 	diff := sliceDiff{
+		path:      path,
 		Different: map[int][]Difference{},
 	}
 	elemTyp := sliceTyp.Elem()
@@ -156,9 +158,11 @@ func diffArrayOrSlice(a, b reflect.Value, sliceTyp reflect.Type, path string) ([
 			diff.Different[i] = d
 		}
 	}
-	if i < a.Len()-1 {
+	diff.len = i
+
+	if i < a.Len() {
 		diff.OnlyA = sliceValue(a, i)
-	} else if i < b.Len()-1 {
+	} else if i < b.Len() {
 		diff.OnlyB = sliceValue(b, i)
 	}
 	if len(diff.OnlyA) > 0 || len(diff.OnlyB) > 0 || len(diff.Different) > 0 {
@@ -176,11 +180,24 @@ func sliceValue(s reflect.Value, at int) []interface{} {
 }
 
 type sliceDiff struct {
+	path string
+	len  int
+
 	OnlyA     []interface{}
 	OnlyB     []interface{}
 	Different map[int][]Difference
 }
 
-func (s sliceDiff) String() string {
-	return "slice diff"
+func (s sliceDiff) Summarise(out io.Writer) {
+	for _, diffs := range s.Different {
+		for _, diff := range diffs {
+			diff.Summarise(out)
+		}
+	}
+	for i, removed := range s.OnlyA {
+		fmt.Fprintf(out, "Removed %s[%d]: %+v\n", s.path, s.len+i, removed)
+	}
+	for i, added := range s.OnlyB {
+		fmt.Fprintf(out, "Added %s[%d]: %+v\n", s.path, s.len+i, added)
+	}
 }

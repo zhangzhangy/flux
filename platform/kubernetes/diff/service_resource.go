@@ -3,6 +3,7 @@ package diff
 import (
 	"errors"
 	"fmt"
+	"io"
 )
 
 // For reference:
@@ -30,6 +31,7 @@ func (s Selector) Diff(other Differ, path string) ([]Difference, error) {
 
 func diffMap(a, b map[string]string, path string) ([]Difference, error) {
 	diff := mapDifference{
+		path:      path,
 		OnlyA:     map[string]string{},
 		OnlyB:     map[string]string{},
 		Different: map[string]valueDifference{},
@@ -57,13 +59,15 @@ func diffMap(a, b map[string]string, path string) ([]Difference, error) {
 }
 
 type mapDifference struct {
+	path string
+
 	OnlyA     map[string]string
 	OnlyB     map[string]string
 	Different map[string]valueDifference
 }
 
-func (d mapDifference) String() string {
-	return "difference in maps"
+func (d mapDifference) Summarise(out io.Writer) {
+	fmt.Fprintf(out, "%s: map difference", d.path)
 }
 
 type ServicePort struct {
