@@ -32,12 +32,12 @@ spec:
 `
 
 func TestServiceDiff(t *testing.T) {
-	a, err := ParseMultidoc([]byte(serviceA))
+	a, err := ParseMultidoc([]byte(serviceA), "A")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	b, err := ParseMultidoc([]byte(serviceB))
+	b, err := ParseMultidoc([]byte(serviceB), "B")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -53,7 +53,7 @@ func TestServiceDiff(t *testing.T) {
 	if len(diff.OnlyB) > 0 {
 		t.Errorf("expected no items just in B, got:\n%#v", diff.OnlyB)
 	}
-	if len(diff.Different) != 0 {
+	if len(diff.Different) == 0 {
 		t.Errorf("expected A and B different, got:\n%#v", diff.Different)
 	}
 }

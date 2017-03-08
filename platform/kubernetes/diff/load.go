@@ -11,25 +11,27 @@ import (
 	yaml "gopkg.in/yaml.v2"
 )
 
-// LoadManifests takes a path to a directory or file, and creates an
-// object set based on the file(s) therein. Resources are named
-// according to the file content, rather than the file name of
-// directory structure.
-func Load(root string) (ObjectSet, error) {
-	objs := ObjectSet{}
+// Load takes a path to a directory or file, and creates an object set
+// based on the file(s) therein. Resources are named according to the
+// file content, rather than the file name of directory structure.
+func Load(root string) (*ObjectSet, error) {
+	objs := MakeObjectSet(root)
 	var err error
 	err = filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return errors.Wrap(err, "walking filesystem for yamels")
+		}
 		if !info.IsDir() && filepath.Ext(path) == ".yaml" || filepath.Ext(path) == ".yml" {
 			bytes, err := ioutil.ReadFile(path)
 			if err != nil {
 				return errors.Wrapf(err, `reading file at "%s"`, path)
 			}
-			docsInFile, err := ParseMultidoc(bytes)
+			docsInFile, err := ParseMultidoc(bytes, path)
 			if err != nil {
 				return errors.Wrapf(err, `parsing file at "%s"`, path)
 			}
-			for id, obj := range docsInFile {
-				objs[id] = obj
+			for id, obj := range docsInFile.Objects {
+				objs.Objects[id] = obj
 			}
 		}
 		return nil
@@ -39,8 +41,8 @@ func Load(root string) (ObjectSet, error) {
 
 // ParseManifests takes a dump of config (a multidoc YAML) and
 // constructs an object set from the resources represented therein.
-func ParseMultidoc(multidoc []byte) (ObjectSet, error) {
-	objs := ObjectSet{}
+func ParseMultidoc(multidoc []byte, source string) (*ObjectSet, error) {
+	objs := MakeObjectSet(source)
 	chunks := bufio.NewScanner(bytes.NewReader(multidoc))
 	chunks.Split(splitYAMLDocument)
 
@@ -49,7 +51,7 @@ func ParseMultidoc(multidoc []byte) (ObjectSet, error) {
 		if err := yaml.Unmarshal(chunks.Bytes(), &obj); err != nil {
 			return objs, errors.Wrap(err, "parsing YAML doc")
 		}
-		objs[obj.ID()] = obj.Object
+		objs.Objects[obj.ID()] = obj.Object
 	}
 	if err := chunks.Err(); err != nil {
 		return objs, errors.Wrap(err, "scanning multidoc")

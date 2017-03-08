@@ -13,36 +13,41 @@ type Difference interface {
 }
 
 type ObjectSetDiff struct {
+	A, B      *ObjectSet
 	OnlyA     []Object
 	OnlyB     []Object
 	Different map[ObjectID][]Difference
 }
 
-func MakeObjectSetDiff() ObjectSetDiff {
+func MakeObjectSetDiff(a, b *ObjectSet) ObjectSetDiff {
 	return ObjectSetDiff{
+		A:         a,
+		B:         b,
 		Different: map[ObjectID][]Difference{},
 	}
 }
 
 // Diff calculates the differences between one model and another
-func DiffSet(a, b ObjectSet) (ObjectSetDiff, error) {
-	diff := MakeObjectSetDiff()
+func DiffSet(a, b *ObjectSet) (ObjectSetDiff, error) {
+	diff := MakeObjectSetDiff(a, b)
 
 	// A - B and A ^ B at the same time
-	for id, objA := range a {
-		if objB, found := b[id]; found {
+	for id, objA := range a.Objects {
+		if objB, found := b.Objects[id]; found {
 			objDiff, err := DiffObject(objA, objB)
 			if err != nil {
 				return diff, err
 			}
-			diff.Different[id] = objDiff
+			if len(objDiff) > 0 {
+				diff.Different[id] = objDiff
+			}
 		} else {
 			diff.OnlyA = append(diff.OnlyA, objA)
 		}
 	}
 	// now, B - A
-	for id, objB := range b {
-		if _, found := a[id]; !found {
+	for id, objB := range b.Objects {
+		if _, found := a.Objects[id]; !found {
 			diff.OnlyB = append(diff.OnlyB, objB)
 		}
 	}

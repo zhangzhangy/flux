@@ -88,8 +88,8 @@ func TestFieldwiseDiff(t *testing.T) {
 // --- test whole `ObjectSet`s
 
 func TestEmptyVsEmpty(t *testing.T) {
-	setA := ObjectSet{}
-	setB := ObjectSet{}
+	setA := MakeObjectSet("A")
+	setB := MakeObjectSet("B")
 	diff, err := DiffSet(setA, setB)
 	if err != nil {
 		t.Error(err)
@@ -108,17 +108,16 @@ func TestSomeVsNone(t *testing.T) {
 		},
 	}
 
-	setA := ObjectSet{
-		objA.ObjectID: objA,
-	}
-	setB := ObjectSet{}
+	setA := MakeObjectSet("A")
+	setA.Objects[objA.ObjectID] = objA
+	setB := MakeObjectSet("B")
 
 	diff, err := DiffSet(setA, setB)
 	if err != nil {
 		t.Error(err)
 	}
 
-	expected := MakeObjectSetDiff()
+	expected := MakeObjectSetDiff(setA, setB)
 	expected.OnlyA = []Object{objA}
 	if !reflect.DeepEqual(expected, diff) {
 		t.Errorf("expected:\n%#v\ngot:\n%#v", expected, diff)
@@ -134,17 +133,16 @@ func TestNoneVsSome(t *testing.T) {
 		},
 	}
 
-	setA := ObjectSet{}
-	setB := ObjectSet{
-		objB.ObjectID: objB,
-	}
+	setA := MakeObjectSet("A")
+	setB := MakeObjectSet("B")
+	setB.Objects[objB.ObjectID] = objB
 
 	diff, err := DiffSet(setA, setB)
 	if err != nil {
 		t.Error(err)
 	}
 
-	expected := MakeObjectSetDiff()
+	expected := MakeObjectSetDiff(setA, setB)
 	expected.OnlyB = []Object{objB}
 	if !reflect.DeepEqual(expected, diff) {
 		t.Errorf("expected:\n%#v\ngot:\n%#v", expected, diff)

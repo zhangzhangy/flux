@@ -18,7 +18,17 @@ type Object interface {
 
 // ObjectSet is a set of several objects which can be diffed
 // collectively.
-type ObjectSet map[ObjectID]Object
+type ObjectSet struct {
+	Source  string
+	Objects map[ObjectID]Object
+}
+
+func MakeObjectSet(source string) *ObjectSet {
+	return &ObjectSet{
+		Source:  source,
+		Objects: map[ObjectID]Object{},
+	}
+}
 
 // -- unmarshaling code and diffing code for specific object and field
 // types
