@@ -152,9 +152,8 @@ func diffArrayOrSlice(a, b reflect.Value, sliceTyp reflect.Type, path string) ([
 		d, err := diffObj(a.Index(i), b.Index(i), elemTyp, fmt.Sprintf("%s[%d]", path, i))
 		if err != nil {
 			return nil, err
-		} else if len(d) > 0 {
-			diffs = append(diffs, d...)
 		}
+		diffs = append(diffs, d...)
 	}
 
 	for j := i; j < a.Len(); j++ {
@@ -182,13 +181,13 @@ func diffMap(a, b reflect.Value, elemTyp reflect.Type, path string) ([]Differenc
 			}
 			diffs = append(diffs, moreDiffs...)
 		} else {
-			diffs = append(diffs, removed{valA, fmt.Sprintf(`%s[%v]`, path, keyA)})
+			diffs = append(diffs, removed{valA.Interface(), fmt.Sprintf(`%s[%v]`, path, keyA)})
 		}
 	}
 	for _, keyB := range b.MapKeys() {
 		valB := b.MapIndex(keyB)
-		if valA := a.MapIndex(keyB); valA != zero {
-			diffs = append(diffs, added{valB, fmt.Sprintf(`%s[%v]`, path, keyB)})
+		if valA := a.MapIndex(keyB); valA == zero {
+			diffs = append(diffs, added{valB.Interface(), fmt.Sprintf(`%s[%v]`, path, keyB)})
 		}
 	}
 

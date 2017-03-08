@@ -37,7 +37,7 @@ func (t TestDiffer) Diff(d Differ, path string) ([]Difference, error) {
 	}
 
 	if !strings.EqualFold(t.CaseInsensitive, other.CaseInsensitive) {
-		return []Difference{valueDifference{t.CaseInsensitive, other.CaseInsensitive, path}}, nil
+		return []Difference{changed{t.CaseInsensitive, other.CaseInsensitive, path}}, nil
 	}
 	return nil, nil
 }
@@ -168,10 +168,47 @@ func TestSliceDiff(t *testing.T) {
 		},
 		removed{
 			value: "c",
-			path:  "slice[3]",
+			path:  "slice[2]",
 		},
 	}
-	if !reflect.DeepEqual(expected, diffs[0]) {
-		t.Errorf("expected one diff:\n%#v\ngot:\n%#v\n", expected, diffs[0])
+	if !reflect.DeepEqual(expected, diffs) {
+		t.Errorf("expected diff:\n%#v\ngot:\n%#v\n", expected, diffs)
+	}
+}
+
+func TestMapDiff(t *testing.T) {
+	a := map[string]string{
+		"one":   "foo",
+		"two":   "bar",
+		"three": "baz",
+	}
+	b := map[string]string{
+		"one":  "foo",
+		"two":  "bart",
+		"four": "shamu",
+	}
+
+	diffs, err := diffObj(reflect.ValueOf(a), reflect.ValueOf(b), reflect.TypeOf(a), "map")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	expected := []Difference{
+		changed{
+			a:    "bar",
+			b:    "bart",
+			path: "map[two]",
+		},
+		removed{
+			value: "baz",
+			path:  "map[three]",
+		},
+		added{
+			value: "shamu",
+			path:  "map[four]",
+		},
+	}
+	if !reflect.DeepEqual(expected, diffs) {
+		t.Errorf("expected diff:\n%#v\ngot:\n%#v\n", expected, diffs)
 	}
 }
