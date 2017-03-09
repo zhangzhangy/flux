@@ -18,7 +18,7 @@ func (d removed) Summarise(out io.Writer) {
 }
 
 func (d opaqueChanged) Summarise(out io.Writer) {
-	fmt.Fprintf(out, "* %s: data has changed", d.path)
+	fmt.Fprintf(out, "* %s: data has changed\n", d.path)
 }
 
 func (d ObjectSetDiff) Summarise(out io.Writer) {

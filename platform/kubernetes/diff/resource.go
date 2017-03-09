@@ -93,6 +93,22 @@ func (obj *object) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		secret.baseObject = baseObject{id}
 		obj.Object = &secret
 		return nil
+	case "ConfigMap":
+		var config ConfigMap
+		if err := unmarshal(&config); err != nil {
+			return err
+		}
+		config.baseObject = baseObject{id}
+		obj.Object = &config
+		return nil
+	case "Namespace":
+		var ns Namespace
+		if err := unmarshal(&ns); err != nil {
+			return err
+		}
+		ns.baseObject = baseObject{id}
+		obj.Object = &ns
+		return nil
 	}
 
 	return errors.New("unknown object type " + objID.Kind)
