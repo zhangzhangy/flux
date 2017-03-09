@@ -10,11 +10,11 @@ func (d changed) Summarise(out io.Writer) {
 }
 
 func (d added) Summarise(out io.Writer) {
-	fmt.Fprintf(out, "+ %s: %v\n", d.path, d.value)
+	fmt.Fprintf(out, "+ %s: %+v\n", d.path, d.value)
 }
 
 func (d removed) Summarise(out io.Writer) {
-	fmt.Fprintf(out, "- %s: %v\n", d.path, d.value)
+	fmt.Fprintf(out, "- %s: %+v\n", d.path, d.value)
 }
 
 func (d ObjectSetDiff) Summarise(out io.Writer) {
