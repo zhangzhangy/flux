@@ -40,41 +40,37 @@ type object struct {
 
 // struct to embed in objects, to provide default implementation
 type baseObject struct {
-	ObjectID
+	Kind string `yaml:"kind"`
+	Meta struct {
+		Namespace string `yaml:"namespace"`
+		Name      string `yaml:"name"`
+	} `yaml:"metadata"`
 }
 
 func (o baseObject) ID() ObjectID {
-	return o.ObjectID
+	return ObjectID{
+		Kind:      o.Kind,
+		Namespace: o.Meta.Namespace,
+		Name:      o.Meta.Name,
+	}
 }
 
 func (obj *object) UnmarshalYAML(unmarshal func(interface{}) error) error {
-	var objID struct {
-		Kind string `yaml:"kind"`
-		Meta struct {
-			Namespace string `yaml:"namespace"`
-			Name      string `yaml:"name"`
-		} `yaml:"metadata"`
-	}
-	if err := unmarshal(&objID); err != nil {
+	var base baseObject
+	if err := unmarshal(&base); err != nil {
 		return err
 	}
-
-	id := ObjectID{
-		Kind:      objID.Kind,
-		Name:      objID.Meta.Name,
-		Namespace: objID.Meta.Namespace,
-	}
-	if id.Namespace == "" {
-		id.Namespace = "default"
+	if base.Meta.Namespace == "" {
+		base.Meta.Namespace = "default"
 	}
 
-	switch id.Kind {
+	switch base.Kind {
 	case "Deployment":
 		var dep Deployment
 		if err := unmarshal(&dep); err != nil {
 			return err
 		}
-		dep.baseObject = baseObject{id}
+		dep.baseObject = base
 		obj.Object = &dep
 		return nil
 	case "Service":
@@ -82,7 +78,7 @@ func (obj *object) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		if err := unmarshal(&svc); err != nil {
 			return err
 		}
-		svc.baseObject = baseObject{id}
+		svc.baseObject = base
 		obj.Object = &svc
 		return nil
 	case "Secret":
@@ -90,7 +86,7 @@ func (obj *object) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		if err := unmarshal(&secret); err != nil {
 			return err
 		}
-		secret.baseObject = baseObject{id}
+		secret.baseObject = base
 		obj.Object = &secret
 		return nil
 	case "ConfigMap":
@@ -98,7 +94,7 @@ func (obj *object) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		if err := unmarshal(&config); err != nil {
 			return err
 		}
-		config.baseObject = baseObject{id}
+		config.baseObject = base
 		obj.Object = &config
 		return nil
 	case "Namespace":
@@ -106,12 +102,12 @@ func (obj *object) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		if err := unmarshal(&ns); err != nil {
 			return err
 		}
-		ns.baseObject = baseObject{id}
+		ns.baseObject = base
 		obj.Object = &ns
 		return nil
 	}
 
-	return errors.New("unknown object type " + objID.Kind)
+	return errors.New("unknown object type " + base.Kind)
 }
 
 // Specific resource types are in *_resource.go
