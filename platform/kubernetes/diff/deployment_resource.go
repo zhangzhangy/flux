@@ -43,9 +43,12 @@ type ContainerSpec struct {
 
 type Args []string
 
-// TODO implement better diff for args -- these frequently change by
-// adding or removing items in the middle. Order _does_ matter in
-// general though.
+func (a Args) Diff(d Differ, path string) ([]Difference, error) {
+	if b, ok := d.(Args); ok {
+		return diffLines([]string(a), []string(b), path)
+	}
+	return nil, ErrNotDiffable
+}
 
 type ContainerPort struct {
 	ContainerPort int

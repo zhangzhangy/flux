@@ -28,6 +28,11 @@ type removed struct {
 	path  string
 }
 
+// the value has changed, but don't report the before or after
+type opaqueChanged struct {
+	path string
+}
+
 type ObjectSetDiff struct {
 	A, B      *ObjectSet
 	OnlyA     []Object
@@ -74,6 +79,8 @@ type Differ interface {
 	Diff(a Differ, path string) ([]Difference, error)
 }
 
+var ErrNotDiffable = errors.New("values are not diffable")
+
 // Diff one object with another. This assumes that the objects being
 // compared are supposed to represent the same logical object, i.e.,
 // they were identified with the same ID. An error indicates they are
@@ -87,7 +94,7 @@ func DiffObject(a, b Object) ([]Difference, error) {
 	// they are not comparable.
 	typA, typB := reflect.TypeOf(a), reflect.TypeOf(b)
 	if typA != typB {
-		return nil, errors.New("objects being compared are not the same runtime type")
+		return nil, ErrNotDiffable
 	}
 	return diffObj(reflect.ValueOf(a), reflect.ValueOf(b), typA, "")
 }
@@ -116,7 +123,7 @@ func diffObj(a, b reflect.Value, typ reflect.Type, path string) ([]Difference, e
 	case reflect.Map:
 		return diffMap(a, b, typ.Elem(), path)
 	case reflect.Func:
-		return nil, errors.New("func dif not implemented (and not implementable)")
+		return nil, errors.New("func diff not implemented (and not implementable)")
 	default: // all ground types
 		if a.Interface() != b.Interface() {
 			return []Difference{changed{a.Interface(), b.Interface(), path}}, nil

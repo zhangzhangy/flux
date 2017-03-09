@@ -17,6 +17,10 @@ func (d removed) Summarise(out io.Writer) {
 	fmt.Fprintf(out, "- %s: %+v\n", d.path, d.value)
 }
 
+func (d opaqueChanged) Summarise(out io.Writer) {
+	fmt.Fprintf(out, "* %s: data has changed", d.path)
+}
+
 func (d ObjectSetDiff) Summarise(out io.Writer) {
 	if len(d.OnlyA) > 0 {
 		fmt.Fprintf(out, "Only in %s:\n", d.A.Source)

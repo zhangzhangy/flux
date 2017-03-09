@@ -85,6 +85,14 @@ func (obj *object) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		svc.baseObject = baseObject{id}
 		obj.Object = &svc
 		return nil
+	case "Secret":
+		var secret Secret
+		if err := unmarshal(&secret); err != nil {
+			return err
+		}
+		secret.baseObject = baseObject{id}
+		obj.Object = &secret
+		return nil
 	}
 
 	return errors.New("unknown object type " + objID.Kind)
