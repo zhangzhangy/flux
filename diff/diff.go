@@ -13,24 +13,49 @@ type Difference interface {
 	Summarise(out io.Writer)
 }
 
-type changed struct {
-	a, b interface{}
-	path string
+type Changed struct {
+	A, B interface{}
+	Path string
 }
 
-type added struct {
-	value interface{}
-	path  string
+type Added struct {
+	Value interface{}
+	Path  string
 }
 
-type removed struct {
-	value interface{}
-	path  string
+type Removed struct {
+	Value interface{}
+	Path  string
 }
 
 // the value has changed, but don't report the before or after
-type opaqueChanged struct {
-	path string
+type OpaqueChanged struct {
+	Path string
+}
+
+// Objects are considered unique by {Namespace, Kind, Name}
+type ObjectID struct {
+	Namespace string
+	Kind      string
+	Name      string
+}
+
+type Object interface {
+	ID() ObjectID
+}
+
+// ObjectSet is a set of several objects which can be diffed
+// collectively.
+type ObjectSet struct {
+	Source  string
+	Objects map[ObjectID]Object
+}
+
+func MakeObjectSet(source string) *ObjectSet {
+	return &ObjectSet{
+		Source:  source,
+		Objects: map[ObjectID]Object{},
+	}
 }
 
 type ObjectSetDiff struct {
@@ -126,7 +151,7 @@ func diffObj(a, b reflect.Value, typ reflect.Type, path string) ([]Difference, e
 		return nil, errors.New("func diff not implemented (and not implementable)")
 	default: // all ground types
 		if a.Interface() != b.Interface() {
-			return []Difference{changed{a.Interface(), b.Interface(), path}}, nil
+			return []Difference{Changed{a.Interface(), b.Interface(), path}}, nil
 		}
 		return nil, nil
 	}
@@ -164,10 +189,10 @@ func diffArrayOrSlice(a, b reflect.Value, sliceTyp reflect.Type, path string) ([
 	}
 
 	for j := i; j < a.Len(); j++ {
-		diffs = append(diffs, removed{a.Index(j).Interface(), fmt.Sprintf("%s[%d]", path, j)})
+		diffs = append(diffs, Removed{a.Index(j).Interface(), fmt.Sprintf("%s[%d]", path, j)})
 	}
 	for j := i; j < b.Len(); j++ {
-		diffs = append(diffs, added{b.Index(j).Interface(), fmt.Sprintf("%s[%d]", path, j)})
+		diffs = append(diffs, Added{b.Index(j).Interface(), fmt.Sprintf("%s[%d]", path, j)})
 	}
 	return diffs, nil
 }
@@ -188,13 +213,13 @@ func diffMap(a, b reflect.Value, elemTyp reflect.Type, path string) ([]Differenc
 			}
 			diffs = append(diffs, moreDiffs...)
 		} else {
-			diffs = append(diffs, removed{valA.Interface(), fmt.Sprintf(`%s[%v]`, path, keyA)})
+			diffs = append(diffs, Removed{valA.Interface(), fmt.Sprintf(`%s[%v]`, path, keyA)})
 		}
 	}
 	for _, keyB := range b.MapKeys() {
 		valB := b.MapIndex(keyB)
 		if valA := a.MapIndex(keyB); valA == zero {
-			diffs = append(diffs, added{valB.Interface(), fmt.Sprintf(`%s[%v]`, path, keyB)})
+			diffs = append(diffs, Added{valB.Interface(), fmt.Sprintf(`%s[%v]`, path, keyB)})
 		}
 	}
 

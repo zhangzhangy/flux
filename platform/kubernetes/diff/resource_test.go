@@ -2,6 +2,8 @@ package diff
 
 import (
 	"testing"
+
+	"github.com/weaveworks/flux/diff"
 )
 
 var serviceA = `---
@@ -42,7 +44,7 @@ func TestServiceDiff(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	diff, err := DiffSet(a, b)
+	diff, err := diff.DiffSet(a, b)
 	if err != nil {
 		t.Error(err)
 	}

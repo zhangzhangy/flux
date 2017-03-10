@@ -2,41 +2,12 @@ package diff
 
 import (
 	"errors"
+
+	"github.com/weaveworks/flux/diff"
 )
-
-// https://kubernetes.io/docs/user-guide/identifiers/
-// Objects are unique by {Namespace, Kind, Name}
-type ObjectID struct {
-	Namespace string
-	Kind      string
-	Name      string
-}
-
-type Object interface {
-	ID() ObjectID
-}
-
-// ObjectSet is a set of several objects which can be diffed
-// collectively.
-type ObjectSet struct {
-	Source  string
-	Objects map[ObjectID]Object
-}
-
-func MakeObjectSet(source string) *ObjectSet {
-	return &ObjectSet{
-		Source:  source,
-		Objects: map[ObjectID]Object{},
-	}
-}
 
 // -- unmarshaling code and diffing code for specific object and field
 // types
-
-// Container for objects, so there's something to deserialise into
-type object struct {
-	Object
-}
 
 // struct to embed in objects, to provide default implementation
 type baseObject struct {
@@ -47,12 +18,17 @@ type baseObject struct {
 	} `yaml:"metadata"`
 }
 
-func (o baseObject) ID() ObjectID {
-	return ObjectID{
+func (o baseObject) ID() diff.ObjectID {
+	return diff.ObjectID{
 		Kind:      o.Kind,
 		Namespace: o.Meta.Namespace,
 		Name:      o.Meta.Name,
 	}
+}
+
+// Container for objects, so there's something to deserialise into
+type object struct {
+	diff.Object
 }
 
 func (obj *object) UnmarshalYAML(unmarshal func(interface{}) error) error {

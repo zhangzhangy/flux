@@ -9,13 +9,15 @@ import (
 
 	"github.com/pkg/errors"
 	yaml "gopkg.in/yaml.v2"
+
+	"github.com/weaveworks/flux/diff"
 )
 
 // Load takes a path to a directory or file, and creates an object set
 // based on the file(s) therein. Resources are named according to the
 // file content, rather than the file name of directory structure.
-func Load(root string) (*ObjectSet, error) {
-	objs := MakeObjectSet(root)
+func Load(root string) (*diff.ObjectSet, error) {
+	objs := diff.MakeObjectSet(root)
 	var err error
 	err = filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
@@ -41,8 +43,8 @@ func Load(root string) (*ObjectSet, error) {
 
 // ParseManifests takes a dump of config (a multidoc YAML) and
 // constructs an object set from the resources represented therein.
-func ParseMultidoc(multidoc []byte, source string) (*ObjectSet, error) {
-	objs := MakeObjectSet(source)
+func ParseMultidoc(multidoc []byte, source string) (*diff.ObjectSet, error) {
+	objs := diff.MakeObjectSet(source)
 	chunks := bufio.NewScanner(bytes.NewReader(multidoc))
 	chunks.Split(splitYAMLDocument)
 

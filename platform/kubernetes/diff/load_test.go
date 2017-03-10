@@ -4,8 +4,17 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/weaveworks/flux/diff"
 	"github.com/weaveworks/flux/platform/kubernetes/testdata"
 )
+
+// for convenience
+func base(kind, namespace, name string) baseObject {
+	b := baseObject{Kind: kind}
+	b.Meta.Namespace = namespace
+	b.Meta.Name = name
+	return b
+}
 
 func TestParseEmpty(t *testing.T) {
 	doc := ``
@@ -37,8 +46,8 @@ metadata:
 
 	objA := base("Deployment", "default", "a-deployment")
 	objB := base("Service", "b-namespace", "b-service")
-	expected := MakeObjectSet("test")
-	expected.Objects = map[ObjectID]Object{
+	expected := diff.MakeObjectSet("test")
+	expected.Objects = map[diff.ObjectID]diff.Object{
 		objA.ID(): &Deployment{baseObject: objA},
 		objB.ID(): &Service{baseObject: objB},
 	}

@@ -5,20 +5,20 @@ import (
 	"io"
 )
 
-func (d changed) Summarise(out io.Writer) {
-	fmt.Fprintf(out, "* %s: %v != %v\n", d.path, d.a, d.b)
+func (d Changed) Summarise(out io.Writer) {
+	fmt.Fprintf(out, "* %s: %v != %v\n", d.Path, d.A, d.B)
 }
 
-func (d added) Summarise(out io.Writer) {
-	fmt.Fprintf(out, "+ %s: %+v\n", d.path, d.value)
+func (d Added) Summarise(out io.Writer) {
+	fmt.Fprintf(out, "+ %s: %+v\n", d.Path, d.Value)
 }
 
-func (d removed) Summarise(out io.Writer) {
-	fmt.Fprintf(out, "- %s: %+v\n", d.path, d.value)
+func (d Removed) Summarise(out io.Writer) {
+	fmt.Fprintf(out, "- %s: %+v\n", d.Path, d.Value)
 }
 
-func (d opaqueChanged) Summarise(out io.Writer) {
-	fmt.Fprintf(out, "* %s: data has changed\n", d.path)
+func (d OpaqueChanged) Summarise(out io.Writer) {
+	fmt.Fprintf(out, "* %s: data has changed\n", d.Path)
 }
 
 func (d ObjectSetDiff) Summarise(out io.Writer) {

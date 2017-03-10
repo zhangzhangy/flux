@@ -6,7 +6,7 @@ import (
 
 // TODO: coalesce `-` followed by `+` into a change (if it looks
 // similar?)
-func diffLines(a, b []string, path string) ([]Difference, error) {
+func DiffLines(a, b []string, path string) ([]Difference, error) {
 	if len(a) == 0 && len(b) == 0 {
 		return nil, nil
 	}
@@ -14,15 +14,15 @@ func diffLines(a, b []string, path string) ([]Difference, error) {
 	var diffs []Difference
 	addIndex, removeIndex := 0, 0
 
-	chunks := DiffChunks(a, b)
+	chunks := diffChunks(a, b)
 	for _, chunk := range chunks {
 		for i, line := range chunk.Deleted {
-			diffs = append(diffs, removed{line, fmt.Sprintf("%s[%d]", path, removeIndex+i)})
+			diffs = append(diffs, Removed{line, fmt.Sprintf("%s[%d]", path, removeIndex+i)})
 		}
 		removeIndex += len(chunk.Deleted) + len(chunk.Equal)
 
 		for i, line := range chunk.Added {
-			diffs = append(diffs, added{line, fmt.Sprintf("%s[%d]", path, addIndex+i)})
+			diffs = append(diffs, Added{line, fmt.Sprintf("%s[%d]", path, addIndex+i)})
 		}
 		addIndex += len(chunk.Added) + len(chunk.Equal)
 	}
@@ -30,7 +30,7 @@ func diffLines(a, b []string, path string) ([]Difference, error) {
 }
 
 // Taken from https://gowalker.org/github.com/kylelemons/godebug/diff
-func DiffChunks(A, B []string) []Chunk {
+func diffChunks(A, B []string) []Chunk {
 	// algorithm: http://www.xmailserver.org/diff2.pdf
 	N, M := len(A), len(B)
 	MAX := N + M

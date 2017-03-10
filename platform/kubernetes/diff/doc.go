@@ -1,10 +1,7 @@
 package diff
 
-// Procedures for diffing Kubernetes objects. At the most general,
-// these operate on in memory data structures. To get other varieties,
-// files can be read into those structures, or config exported from a
-// running cluster.
+// Types and procedures for diffing Kubernetes objects.
 //
-// The diffs are so-called "semantic diffs", because certain fields
+// The diffs so-generated are "semantic diffs", because certain fields
 // may look different syntactically but are the same in effect; for
 // instance, changing the order of environment entries.

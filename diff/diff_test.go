@@ -9,8 +9,16 @@ import (
 
 // --- test diffing objects
 
+type base struct {
+	Kind, Namespace, Name string
+}
+
+func (b base) ID() ObjectID {
+	return ObjectID{b.Kind, b.Namespace, b.Name}
+}
+
 type TestValue struct {
-	baseObject
+	base
 	ignoreUnexported string
 	StringField      string
 	IntField         int
@@ -37,23 +45,16 @@ func (t TestDiffer) Diff(d Differ, path string) ([]Difference, error) {
 	}
 
 	if !strings.EqualFold(t.CaseInsensitive, other.CaseInsensitive) {
-		return []Difference{changed{t.CaseInsensitive, other.CaseInsensitive, path}}, nil
+		return []Difference{Changed{t.CaseInsensitive, other.CaseInsensitive, path}}, nil
 	}
 	return nil, nil
 }
 
-func base(kind, namespace, name string) baseObject {
-	b := baseObject{Kind: kind}
-	b.Meta.Name = name
-	b.Meta.Namespace = namespace
-	return b
-}
-
 func TestFieldwiseDiff(t *testing.T) {
-	id := base("TestFieldwise", "namespace", "testcase")
+	id := base{"TestFieldwise", "namespace", "testcase"}
 
 	a := TestValue{
-		baseObject:       id,
+		base:             id,
 		ignoreUnexported: "one value",
 		StringField:      "ground value",
 		IntField:         5,
@@ -63,7 +64,7 @@ func TestFieldwiseDiff(t *testing.T) {
 	a.Embedded.NestedValue = true
 
 	b := TestValue{
-		baseObject:       id,
+		base:             id,
 		ignoreUnexported: "completely different value",
 		StringField:      "a different ground value",
 		IntField:         7,
@@ -104,7 +105,7 @@ func TestEmptyVsEmpty(t *testing.T) {
 }
 
 func TestSomeVsNone(t *testing.T) {
-	objA := base("Deployment", "a-namespace", "a-name")
+	objA := base{"Deployment", "a-namespace", "a-name"}
 
 	setA := MakeObjectSet("A")
 	setA.Objects[objA.ID()] = objA
@@ -123,7 +124,7 @@ func TestSomeVsNone(t *testing.T) {
 }
 
 func TestNoneVsSome(t *testing.T) {
-	objB := base("Deployment", "b-namespace", "b-name")
+	objB := base{"Deployment", "b-namespace", "b-name"}
 
 	setA := MakeObjectSet("A")
 	setB := MakeObjectSet("B")
@@ -153,15 +154,8 @@ func TestSliceDiff(t *testing.T) {
 	}
 
 	expected := []Difference{
-		changed{
-			a:    "b",
-			b:    "b'",
-			path: "slice[1]",
-		},
-		removed{
-			value: "c",
-			path:  "slice[2]",
-		},
+		Changed{"b", "b'", "slice[1]"},
+		Removed{"c", "slice[2]"},
 	}
 	if !reflect.DeepEqual(expected, diffs) {
 		t.Errorf("expected diff:\n%#v\ngot:\n%#v\n", expected, diffs)
@@ -186,19 +180,9 @@ func TestMapDiff(t *testing.T) {
 	}
 
 	expected := []Difference{
-		changed{
-			a:    "bar",
-			b:    "bart",
-			path: "map[two]",
-		},
-		removed{
-			value: "baz",
-			path:  "map[three]",
-		},
-		added{
-			value: "shamu",
-			path:  "map[four]",
-		},
+		Changed{"bar", "bart", "map[two]"},
+		Removed{"baz", "map[three]"},
+		Added{"shamu", "map[four]"},
 	}
 	if !reflect.DeepEqual(expected, diffs) {
 		t.Errorf("expected diff:\n%#v\ngot:\n%#v\n", expected, diffs)

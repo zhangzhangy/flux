@@ -2,6 +2,8 @@ package diff
 
 import (
 	"fmt"
+
+	"github.com/weaveworks/flux/diff"
 )
 
 type PodTemplate struct {
@@ -32,11 +34,11 @@ type ContainerSpec struct {
 
 type Args []string
 
-func (a Args) Diff(d Differ, path string) ([]Difference, error) {
+func (a Args) Diff(d diff.Differ, path string) ([]diff.Difference, error) {
 	if b, ok := d.(Args); ok {
-		return diffLines([]string(a), []string(b), path)
+		return diff.DiffLines([]string(a), []string(b), path)
 	}
-	return nil, ErrNotDiffable
+	return nil, diff.ErrNotDiffable
 }
 
 type ContainerPort struct {
@@ -58,9 +60,9 @@ type EnvEntry struct {
 	Name, Value string
 }
 
-func (a Env) Diff(d Differ, path string) ([]Difference, error) {
+func (a Env) Diff(d diff.Differ, path string) ([]diff.Difference, error) {
 	if b, ok := d.(Env); ok {
-		var diffs []Difference
+		var diffs []diff.Difference
 
 		type entry struct {
 			EnvEntry
@@ -79,18 +81,18 @@ func (a Env) Diff(d Differ, path string) ([]Difference, error) {
 		for keyA, entryA := range as {
 			if entryB, ok := bs[keyA]; ok {
 				if entryB.Value != entryA.Value {
-					diffs = append(diffs, changed{entryA.Value, entryB.Value, fmt.Sprintf("%s[%s]", path, entryA.Name)})
+					diffs = append(diffs, diff.Changed{entryA.Value, entryB.Value, fmt.Sprintf("%s[%s]", path, entryA.Name)})
 				}
 			} else {
-				diffs = append(diffs, removed{entryA.Value, fmt.Sprintf("%s[%s]", path, entryA.Name)})
+				diffs = append(diffs, diff.Removed{entryA.Value, fmt.Sprintf("%s[%s]", path, entryA.Name)})
 			}
 		}
 		for keyB, entryB := range bs {
 			if _, ok := as[keyB]; !ok {
-				diffs = append(diffs, added{entryB.Value, fmt.Sprintf("%s[%s]", path, entryB.Name)})
+				diffs = append(diffs, diff.Added{entryB.Value, fmt.Sprintf("%s[%s]", path, entryB.Name)})
 			}
 		}
 		return diffs, nil
 	}
-	return nil, ErrNotDiffable
+	return nil, diff.ErrNotDiffable
 }
