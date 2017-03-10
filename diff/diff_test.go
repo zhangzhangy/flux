@@ -180,8 +180,8 @@ func TestMapDiff(t *testing.T) {
 	}
 
 	expected := []Difference{
-		Changed{"bar", "bart", "map[two]"},
 		Removed{"baz", "map[three]"},
+		Changed{"bar", "bart", "map[two]"},
 		Added{"shamu", "map[four]"},
 	}
 	if !reflect.DeepEqual(expected, diffs) {

@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"io"
 	"reflect"
+	"sort"
+	"strings"
 )
 
 // Difference represents an individual difference between two
@@ -223,5 +225,62 @@ func diffMap(a, b reflect.Value, elemTyp reflect.Type, path string) ([]Differenc
 		}
 	}
 
+	sort.Sort(sorted(diffs))
 	return diffs, nil
+}
+
+// It helps to return the differences for a map in a stable order
+type sorted []Difference
+
+func (d sorted) Len() int {
+	return len(d)
+}
+
+// Sort order for changes: Removed < {Changed, OpaqueChanged} < Added,
+// then lexicographic on Path
+
+func (d sorted) Less(i, j int) bool {
+	switch a := d[i].(type) {
+	case Removed:
+		switch b := d[j].(type) {
+		case Removed:
+			return strings.Compare(a.Path, b.Path) == -1
+		default:
+			return true
+		}
+	case Changed:
+		switch b := d[j].(type) {
+		case Removed:
+			return false
+		case Changed:
+			return strings.Compare(a.Path, b.Path) == -1
+		case OpaqueChanged:
+			return strings.Compare(a.Path, b.Path) == -1
+		default:
+			return true
+		}
+	case OpaqueChanged:
+		switch b := d[j].(type) {
+		case Removed:
+			return false
+		case Changed:
+			return strings.Compare(a.Path, b.Path) == -1
+		case OpaqueChanged:
+			return strings.Compare(a.Path, b.Path) == -1
+		default:
+			return true
+		}
+	case Added:
+		switch b := d[j].(type) {
+		case Added:
+			return strings.Compare(a.Path, b.Path) == -1
+		default:
+			return false
+		}
+	}
+	return false
+}
+
+func (d sorted) Swap(a, b int) {
+	d[a], d[b] = d[b], d[a]
 }
