@@ -42,14 +42,18 @@ func (t TestDiffer) Diff(d Differ, path string) ([]Difference, error) {
 	return nil, nil
 }
 
+func base(kind, namespace, name string) baseObject {
+	b := baseObject{Kind: kind}
+	b.Meta.Name = name
+	b.Meta.Namespace = namespace
+	return b
+}
+
 func TestFieldwiseDiff(t *testing.T) {
-	id := ObjectID{
-		Namespace: "namespace",
-		Kind:      "TestFieldwise",
-		Name:      "testcase",
-	}
+	id := base("TestFieldwise", "namespace", "testcase")
+
 	a := TestValue{
-		baseObject:       baseObject{id},
+		baseObject:       id,
 		ignoreUnexported: "one value",
 		StringField:      "ground value",
 		IntField:         5,
@@ -59,7 +63,7 @@ func TestFieldwiseDiff(t *testing.T) {
 	a.Embedded.NestedValue = true
 
 	b := TestValue{
-		baseObject:       baseObject{id},
+		baseObject:       id,
 		ignoreUnexported: "completely different value",
 		StringField:      "a different ground value",
 		IntField:         7,
@@ -100,16 +104,10 @@ func TestEmptyVsEmpty(t *testing.T) {
 }
 
 func TestSomeVsNone(t *testing.T) {
-	objA := baseObject{
-		ObjectID: ObjectID{
-			Namespace: "a-namespace",
-			Kind:      "Deployment",
-			Name:      "a-name",
-		},
-	}
+	objA := base("Deployment", "a-namespace", "a-name")
 
 	setA := MakeObjectSet("A")
-	setA.Objects[objA.ObjectID] = objA
+	setA.Objects[objA.ID()] = objA
 	setB := MakeObjectSet("B")
 
 	diff, err := DiffSet(setA, setB)
@@ -125,17 +123,11 @@ func TestSomeVsNone(t *testing.T) {
 }
 
 func TestNoneVsSome(t *testing.T) {
-	objB := baseObject{
-		ObjectID: ObjectID{
-			Namespace: "b-namespace",
-			Kind:      "Deployment",
-			Name:      "b-name",
-		},
-	}
+	objB := base("Deployment", "b-namespace", "b-name")
 
 	setA := MakeObjectSet("A")
 	setB := MakeObjectSet("B")
-	setB.Objects[objB.ObjectID] = objB
+	setB.Objects[objB.ID()] = objB
 
 	diff, err := DiffSet(setA, setB)
 	if err != nil {

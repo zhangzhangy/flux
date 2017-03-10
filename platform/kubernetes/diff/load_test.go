@@ -35,12 +35,12 @@ metadata:
 		t.Error(err)
 	}
 
-	idA := ObjectID{"default", "Deployment", "a-deployment"}
-	idB := ObjectID{"b-namespace", "Service", "b-service"}
+	objA := base("Deployment", "default", "a-deployment")
+	objB := base("Service", "b-namespace", "b-service")
 	expected := MakeObjectSet("test")
 	expected.Objects = map[ObjectID]Object{
-		idA: &Deployment{baseObject: baseObject{ObjectID: idA}},
-		idB: &Service{baseObject: baseObject{ObjectID: idB}},
+		objA.ID(): &Deployment{baseObject: objA},
+		objB.ID(): &Service{baseObject: objB},
 	}
 
 	if !reflect.DeepEqual(expected, objs) {
