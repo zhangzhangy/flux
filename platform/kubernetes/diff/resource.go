@@ -81,6 +81,22 @@ func (obj *object) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		ns.baseObject = base
 		obj.Object = &ns
 		return nil
+	case "DaemonSet":
+		var ds DaemonSet
+		if err := unmarshal(&ds); err != nil {
+			return err
+		}
+		ds.baseObject = base
+		obj.Object = &ds
+		return nil
+	case "Node":
+		var n Node
+		if err := unmarshal(&n); err != nil {
+			return err
+		}
+		n.baseObject = base
+		obj.Object = &n
+		return nil
 	}
 
 	return errors.New("unknown object type " + base.Kind)

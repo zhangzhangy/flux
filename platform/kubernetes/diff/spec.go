@@ -6,8 +6,16 @@ import (
 	"github.com/weaveworks/flux/diff"
 )
 
+// Types that daemonsets, deployments, and other things have in
+// common.
+
+type ObjectMeta struct {
+	Labels      map[string]string
+	Annotations map[string]string
+}
+
 type PodTemplate struct {
-	Metadata Meta
+	Metadata ObjectMeta
 	Spec     PodSpec
 }
 

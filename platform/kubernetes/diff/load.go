@@ -3,11 +3,11 @@ package diff
 import (
 	"bufio"
 	"bytes"
+	"fmt"
 	"io/ioutil"
 	"os"
 	"path/filepath"
 
-	"github.com/pkg/errors"
 	yaml "gopkg.in/yaml.v2"
 
 	"github.com/weaveworks/flux/diff"
@@ -21,16 +21,16 @@ func Load(root string) (*diff.ObjectSet, error) {
 	var err error
 	err = filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
-			return errors.Wrap(err, "walking filesystem for yamels")
+			return fmt.Errorf(`walking %q for yamels: %s`, path, err.Error())
 		}
 		if !info.IsDir() && filepath.Ext(path) == ".yaml" || filepath.Ext(path) == ".yml" {
 			bytes, err := ioutil.ReadFile(path)
 			if err != nil {
-				return errors.Wrapf(err, `reading file at "%s"`, path)
+				return fmt.Errorf(`reading file at "%s": %s`, path, err.Error())
 			}
 			docsInFile, err := ParseMultidoc(bytes, path)
 			if err != nil {
-				return errors.Wrapf(err, `parsing file at "%s"`, path)
+				return fmt.Errorf(`parsing file at "%s": %s`, path, err.Error())
 			}
 			for id, obj := range docsInFile.Objects {
 				objs.Objects[id] = obj
@@ -51,12 +51,12 @@ func ParseMultidoc(multidoc []byte, source string) (*diff.ObjectSet, error) {
 	for chunks.Scan() {
 		var obj object
 		if err := yaml.Unmarshal(chunks.Bytes(), &obj); err != nil {
-			return objs, errors.Wrap(err, "parsing YAML doc")
+			return objs, fmt.Errorf(`parsing YAML doc from "%s": %s`, source, err.Error())
 		}
 		objs.Objects[obj.ID()] = obj.Object
 	}
 	if err := chunks.Err(); err != nil {
-		return objs, errors.Wrap(err, "scanning multidoc")
+		return objs, fmt.Errorf(`scanning multidoc from "%s": %s`, source, err.Error())
 	}
 	return objs, nil
 }
