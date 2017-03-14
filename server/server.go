@@ -475,3 +475,12 @@ func (p *loggingPlatform) Version() (v string, err error) {
 	}()
 	return p.platform.Version()
 }
+
+func (p *loggingPlatform) Sync(def platform.SyncDef) (err error) {
+	defer func() {
+		if err != nil {
+			p.logger.Log("method", "Sync", "error", err)
+		}
+	}()
+	return p.platform.Sync(def)
+}

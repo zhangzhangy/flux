@@ -168,6 +168,18 @@ func (p *removeablePlatform) Version() (v string, err error) {
 	return p.remote.Version()
 }
 
+func (p *removeablePlatform) Sync(spec SyncDef) (err error) {
+	defer func() {
+		if _, ok := err.(FatalError); ok {
+			p.closeWithError(err)
+		}
+	}()
+	return p.remote.Sync(spec)
+}
+
+// disconnectedPlatform is a stub implementation used when the
+// platform is known to be missing.
+
 type disconnectedPlatform struct{}
 
 func (p disconnectedPlatform) AllServices(string, flux.ServiceIDSet) ([]Service, error) {
@@ -188,4 +200,8 @@ func (p disconnectedPlatform) Ping() error {
 
 func (p disconnectedPlatform) Version() (string, error) {
 	return "", errNotSubscribed
+}
+
+func (p disconnectedPlatform) Sync(_ SyncDef) error {
+	return errNotSubscribed
 }
