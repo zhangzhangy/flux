@@ -1,6 +1,4 @@
-package diff
-
-import ()
+package resource
 
 // For reference:
 // https://github.com/kubernetes/client-go/blob/master/pkg/api/v1/types.go#L2641

@@ -1,4 +1,4 @@
-package diff
+package resource
 
 type Node struct {
 	baseObject

@@ -1,4 +1,4 @@
-package diff
+package resource
 
 import (
 	"github.com/weaveworks/flux/diff"

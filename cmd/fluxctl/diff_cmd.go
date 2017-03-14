@@ -8,7 +8,7 @@ import (
 	yaml "gopkg.in/yaml.v2"
 
 	"github.com/weaveworks/flux/diff"
-	kdiff "github.com/weaveworks/flux/platform/kubernetes/diff"
+	"github.com/weaveworks/flux/platform/kubernetes/resource"
 )
 
 type diffOpts struct {
@@ -70,11 +70,11 @@ func (opts *diffOpts) RunE(cmd *cobra.Command, args []string) error {
 		return newUsageError("output format --output,-o must be 'raw', 'text', 'json' or 'yaml'")
 	}
 
-	a, err := kdiff.Load(args[0])
+	a, err := resource.Load(args[0])
 	if err != nil {
 		return err
 	}
-	b, err := kdiff.Load(args[1])
+	b, err := resource.Load(args[1])
 	if err != nil {
 		return err
 	}
