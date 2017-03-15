@@ -17,6 +17,10 @@ func (b base) ID() ObjectID {
 	return ObjectID{b.Kind, b.Namespace, b.Name}
 }
 
+func (b base) Source() string {
+	return "fake"
+}
+
 type TestValue struct {
 	base
 	ignoreUnexported string

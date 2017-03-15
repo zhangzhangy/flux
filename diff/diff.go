@@ -44,6 +44,7 @@ type ObjectID struct {
 
 type Object interface {
 	ID() ObjectID
+	Source() string
 }
 
 // ObjectSet is a set of several objects which can be diffed

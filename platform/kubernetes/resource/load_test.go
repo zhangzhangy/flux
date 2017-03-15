@@ -9,8 +9,8 @@ import (
 )
 
 // for convenience
-func base(kind, namespace, name string) baseObject {
-	b := baseObject{Kind: kind}
+func base(source, kind, namespace, name string) baseObject {
+	b := baseObject{source: source, Kind: kind}
 	b.Meta.Namespace = namespace
 	b.Meta.Name = name
 	return b
@@ -44,16 +44,18 @@ metadata:
 		t.Error(err)
 	}
 
-	objA := base("Deployment", "default", "a-deployment")
-	objB := base("Service", "b-namespace", "b-service")
-	expected := diff.MakeObjectSet("test")
+	objA := base("test", "Deployment", "", "a-deployment")
+	objB := base("test", "Service", "b-namespace", "b-service")
+	expected := diff.MakeObjectSet("fake-path")
 	expected.Objects = map[diff.ObjectID]diff.Object{
 		objA.ID(): &Deployment{baseObject: objA},
 		objB.ID(): &Service{baseObject: objB},
 	}
 
-	if !reflect.DeepEqual(expected, objs) {
-		t.Errorf("expected:\n%#v\ngot:\n%#v", expected, objs)
+	for id, obj := range expected.Objects {
+		if !reflect.DeepEqual(obj, objs.Objects[id]) {
+			t.Errorf("At %+v expected:\n%#v\ngot:\n%#v", id, obj, objs.Objects[id])
+		}
 	}
 }
 

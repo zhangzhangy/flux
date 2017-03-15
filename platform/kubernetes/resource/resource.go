@@ -3,6 +3,8 @@ package resource
 import (
 	"errors"
 
+	yaml "gopkg.in/yaml.v2"
+
 	"github.com/weaveworks/flux/diff"
 )
 
@@ -11,97 +13,83 @@ import (
 
 // struct to embed in objects, to provide default implementation
 type baseObject struct {
-	Kind string `yaml:"kind"`
-	Meta struct {
+	source string
+	Kind   string `yaml:"kind"`
+	Meta   struct {
 		Namespace string `yaml:"namespace"`
 		Name      string `yaml:"name"`
 	} `yaml:"metadata"`
 }
 
 func (o baseObject) ID() diff.ObjectID {
+	ns := o.Meta.Namespace
+	if ns == "" {
+		ns = "default"
+	}
 	return diff.ObjectID{
 		Kind:      o.Kind,
-		Namespace: o.Meta.Namespace,
+		Namespace: ns,
 		Name:      o.Meta.Name,
 	}
 }
 
-// Container for objects, so there's something to deserialise into
-type object struct {
-	diff.Object
+func (o baseObject) Source() string {
+	return o.source
 }
 
-func (obj *object) UnmarshalYAML(unmarshal func(interface{}) error) error {
-	var base baseObject
-	if err := unmarshal(&base); err != nil {
-		return err
-	}
-	if base.Meta.Namespace == "" {
-		base.Meta.Namespace = "default"
+func unmarshalObject(source string, bytes []byte) (diff.Object, error) {
+	var base = baseObject{source: source}
+	if err := yaml.Unmarshal(bytes, &base); err != nil {
+		return nil, err
 	}
 
 	switch base.Kind {
 	case "Deployment":
-		var dep Deployment
-		if err := unmarshal(&dep); err != nil {
-			return err
+		var dep = Deployment{baseObject: base}
+		if err := yaml.Unmarshal(bytes, &dep); err != nil {
+			return nil, err
 		}
-		dep.baseObject = base
-		obj.Object = &dep
-		return nil
+		return &dep, nil
 	case "Service":
-		var svc Service
-		if err := unmarshal(&svc); err != nil {
-			return err
+		var svc = Service{baseObject: base}
+		if err := yaml.Unmarshal(bytes, &svc); err != nil {
+			return nil, err
 		}
-		svc.baseObject = base
-		obj.Object = &svc
-		return nil
+		return &svc, nil
 	case "Secret":
-		var secret Secret
-		if err := unmarshal(&secret); err != nil {
-			return err
+		var secret = Secret{baseObject: base}
+		if err := yaml.Unmarshal(bytes, &secret); err != nil {
+			return nil, err
 		}
-		secret.baseObject = base
-		obj.Object = &secret
-		return nil
+		return &secret, nil
 	case "ConfigMap":
-		var config ConfigMap
-		if err := unmarshal(&config); err != nil {
-			return err
+		var config = ConfigMap{baseObject: base}
+		if err := yaml.Unmarshal(bytes, &config); err != nil {
+			return nil, err
 		}
-		config.baseObject = base
-		obj.Object = &config
-		return nil
+		return &config, nil
 	case "Namespace":
-		var ns Namespace
-		if err := unmarshal(&ns); err != nil {
-			return err
+		var ns = Namespace{baseObject: base}
+		if err := yaml.Unmarshal(bytes, &ns); err != nil {
+			return nil, err
 		}
-		ns.baseObject = base
-		obj.Object = &ns
-		return nil
+		return &ns, nil
 	case "DaemonSet":
-		var ds DaemonSet
-		if err := unmarshal(&ds); err != nil {
-			return err
+		var ds = DaemonSet{baseObject: base}
+		if err := yaml.Unmarshal(bytes, &ds); err != nil {
+			return nil, err
 		}
-		ds.baseObject = base
-		obj.Object = &ds
-		return nil
+		return &ds, nil
 	case "Node":
-		var n Node
-		if err := unmarshal(&n); err != nil {
-			return err
+		var n = Node{baseObject: base}
+		if err := yaml.Unmarshal(bytes, &n); err != nil {
+			return nil, err
 		}
-		n.baseObject = base
-		obj.Object = &n
-		return nil
+		return &n, nil
 	}
 
-	return errors.New("unknown object type " + base.Kind)
+	return nil, errors.New("unknown object type " + base.Kind)
 }
 
-// Specific resource types are in *_resource.go
 // For reference, the Kubernetes v1 types are in:
 // https://github.com/kubernetes/client-go/blob/master/pkg/api/v1/types.go

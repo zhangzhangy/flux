@@ -8,8 +8,6 @@ import (
 	"os"
 	"path/filepath"
 
-	yaml "gopkg.in/yaml.v2"
-
 	"github.com/weaveworks/flux/diff"
 )
 
@@ -33,6 +31,7 @@ func Load(root string) (*diff.ObjectSet, error) {
 				return fmt.Errorf(`parsing file at "%s": %s`, path, err.Error())
 			}
 			for id, obj := range docsInFile.Objects {
+
 				objs.Objects[id] = obj
 			}
 		}
@@ -49,11 +48,11 @@ func ParseMultidoc(multidoc []byte, source string) (*diff.ObjectSet, error) {
 	chunks.Split(splitYAMLDocument)
 
 	for chunks.Scan() {
-		var obj object
-		if err := yaml.Unmarshal(chunks.Bytes(), &obj); err != nil {
-			return objs, fmt.Errorf(`parsing YAML doc from "%s": %s`, source, err.Error())
+		if obj, err := unmarshalObject(source, chunks.Bytes()); err != nil {
+			return nil, fmt.Errorf(`parsing YAML doc from "%s": %s`, source, err.Error())
+		} else {
+			objs.Objects[obj.ID()] = obj
 		}
-		objs.Objects[obj.ID()] = obj.Object
 	}
 	if err := chunks.Err(); err != nil {
 		return objs, fmt.Errorf(`scanning multidoc from "%s": %s`, source, err.Error())
