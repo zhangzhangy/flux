@@ -1,7 +1,9 @@
 package rpc
 
 import (
+	"errors"
 	"io"
+	"net/rpc"
 
 	"github.com/weaveworks/flux/platform"
 )
@@ -19,7 +21,7 @@ func NewClientV5(conn io.ReadWriteCloser) *RPCClientV5 {
 	return &RPCClientV5{NewClientV4(conn)}
 }
 
-func (p *RPCClient) Sync(spec platform.SyncDef) error {
+func (p *RPCClientV5) Sync(spec platform.SyncDef) error {
 	var result SyncResult
 	if err := p.client.Call("RPCServer.Sync", spec, &result); err != nil {
 		if _, ok := err.(rpc.ServerError); !ok && err != nil {

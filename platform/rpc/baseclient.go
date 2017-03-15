@@ -29,3 +29,7 @@ func (bc baseClient) Ping() error {
 func (bc baseClient) Version() (string, error) {
 	return "", platform.UpgradeNeededError(errors.New("Version method not implemented"))
 }
+
+func (bc *baseClient) Sync(platform.SyncDef) error {
+	return platform.UpgradeNeededError(errors.New("Sync method not implemented"))
+}
